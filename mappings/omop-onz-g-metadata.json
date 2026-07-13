@@ -1,0 +1,74 @@
+{
+  "@context": "http://www.w3.org/ns/csvw",
+  "url": "omop-onz-g.csv",
+  "dc:title": "OMOP CDM v6 <-> ONZ-G 2.8.1 mappings",
+  "dc:description": "Hand-authored SSSOM mapping rows between the OMOP CDM v6 OWL ontology and the ONZ-G 2.8.1 ontology. This CSV, together with this metadata file, is the only source of truth; `rosetta mapping build` derives the canonical SSSOM/TSV and RDF/Turtle artifacts from it under build/mappings/.",
+  "tableSchema": {
+    "columns": [
+      {
+        "name": "subject_id",
+        "titles": "subject_id",
+        "datatype": "string",
+        "required": true,
+        "valueUrl": "{+subject_id}",
+        "propertyUrl": "https://w3id.org/sssom/subject_id"
+      },
+      {
+        "name": "predicate_id",
+        "titles": "predicate_id",
+        "datatype": "string",
+        "required": true,
+        "valueUrl": "{+predicate_id}",
+        "propertyUrl": "https://w3id.org/sssom/predicate_id"
+      },
+      {
+        "name": "object_id",
+        "titles": "object_id",
+        "datatype": "string",
+        "required": true,
+        "valueUrl": "{+object_id}",
+        "propertyUrl": "https://w3id.org/sssom/object_id"
+      },
+      {
+        "name": "mapping_justification",
+        "titles": "mapping_justification",
+        "datatype": "string",
+        "required": true,
+        "valueUrl": "{+mapping_justification}",
+        "propertyUrl": "https://w3id.org/sssom/mapping_justification"
+      },
+      {
+        "name": "confidence",
+        "titles": "confidence",
+        "datatype": "number",
+        "propertyUrl": "https://w3id.org/sssom/confidence"
+      },
+      {
+        "name": "author_label",
+        "titles": "author_label",
+        "datatype": "string",
+        "separator": "|",
+        "propertyUrl": "https://w3id.org/sssom/author_label"
+      },
+      {
+        "name": "subject_label",
+        "titles": "subject_label",
+        "datatype": "string",
+        "propertyUrl": "https://w3id.org/sssom/subject_label"
+      },
+      {
+        "name": "object_label",
+        "titles": "object_label",
+        "datatype": "string",
+        "propertyUrl": "https://w3id.org/sssom/object_label"
+      },
+      {
+        "name": "comment",
+        "titles": "comment",
+        "datatype": "string",
+        "propertyUrl": "https://w3id.org/sssom/comment"
+      }
+    ],
+    "primaryKey": ["subject_id", "predicate_id", "object_id"]
+  }
+}

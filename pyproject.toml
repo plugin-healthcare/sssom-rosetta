@@ -1,0 +1,38 @@
+[project]
+name = "sssom-rosetta"
+version = "0.1.0"
+description = "SSSOM-based mappings of most commonly used information models and vocabularies in Dutch Healthcare."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "csvw>=3.0,<5",
+    "markdown>=3.10,<4",
+    "polars>=1.42,<2",
+    "pydantic>=2.13,<3",
+    "rdflib>=7.6,<8",
+    "sssom>=0.4.21,<0.5",
+    "sssom-schema==1.1.0a5",
+    "typer>=0.26,<0.27",
+    "wingman",
+]
+
+[project.scripts]
+rosetta = "sssom_rosetta.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.9,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+wingman = { git = "https://github.com/plugin-healthcare/wingman" }
+
+[dependency-groups]
+dev = [
+    "linkml>=1.11,<2",
+    "pytest>=9.1.1",
+    "ruff>=0.15.21",
+    "ty>=0.0.59",
+]
+docs = [
+    "zensical>=0.0.50",
+]

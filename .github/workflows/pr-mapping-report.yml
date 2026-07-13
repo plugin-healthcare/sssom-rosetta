@@ -1,0 +1,140 @@
+name: PR mapping report
+
+# Per AGENTS.md "CI: mapping report on PRs" (plan.md todo #13): on PRs that
+# touch the curated mapping set, validate + build the head (and, if present,
+# base) SSSOM/TSV, render a Markdown/HTML diff report, upsert it as a PR
+# comment, and upload the generated artifacts.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "mappings/**"
+
+# Minimum permissions needed: read the repo, and comment on the PR.
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  # NOTE: this workflow currently only handles the one hand-authored mapping
+  # set under mappings/ (see AGENTS.md); a future multi-mapping-set increment
+  # should loop over the changed pairs instead of hardcoding these paths and
+  # metadata values.
+  MAPPING_CSV: mappings/omop-onz-g.csv
+  MAPPING_METADATA: mappings/omop-onz-g-metadata.json
+  MAPPING_SET_ID: "https://raw.githubusercontent.com/plugin-healthcare/sssom-rosetta/main/build/mappings/omop-onz-g.sssom.tsv"
+  MAPPING_LICENSE: "https://creativecommons.org/publicdomain/zero/1.0/"
+  CURIE_MAP: '{"omop": "https://w3id.org/omop/ontology/", "onz-g": "http://purl.org/ozo/onz-g#", "skos": "http://www.w3.org/2004/02/skos/core#", "semapv": "https://w3id.org/semapv/vocab/"}'
+
+jobs:
+  mapping-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          # Full history so the base ref's blob is available to `git show`.
+          fetch-depth: 0
+
+      - name: Install uv
+        # astral-sh/setup-uv now publishes only immutable full-version tags
+        # (no moving @v8 alias); bump this pin when upgrading.
+        uses: astral-sh/setup-uv@v8.3.2
+        with:
+          python-version: "3.13"
+
+      - name: Sync dependencies
+        run: uv sync --locked
+
+      - name: Validate head mapping set
+        run: |
+          uv run rosetta mapping validate "$MAPPING_CSV" "$MAPPING_METADATA" \
+            --mapping-set-id "$MAPPING_SET_ID" \
+            --license "$MAPPING_LICENSE" \
+            --curie-map "$CURIE_MAP"
+
+      - name: Build head mapping set
+        run: |
+          uv run rosetta mapping build "$MAPPING_CSV" "$MAPPING_METADATA" \
+            --mapping-set-id "$MAPPING_SET_ID" \
+            --license "$MAPPING_LICENSE" \
+            --curie-map "$CURIE_MAP" \
+            --output-dir build/mappings
+
+      - name: Extract base ref mapping set, if present
+        id: extract-base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p base-ref/mappings
+          if git show "$BASE_SHA:$MAPPING_CSV" > base-ref/mappings/omop-onz-g.csv 2>/dev/null \
+             && git show "$BASE_SHA:$MAPPING_METADATA" > base-ref/mappings/omop-onz-g-metadata.json 2>/dev/null; then
+            echo "base_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "base_exists=false" >> "$GITHUB_OUTPUT"
+            echo "No mapping set at base ref (first-time addition); skipping base build."
+            rm -rf base-ref
+          fi
+
+      - name: Build base mapping set
+        if: steps.extract-base.outputs.base_exists == 'true'
+        run: |
+          uv run rosetta mapping build base-ref/mappings/omop-onz-g.csv base-ref/mappings/omop-onz-g-metadata.json \
+            --mapping-set-id "$MAPPING_SET_ID" \
+            --license "$MAPPING_LICENSE" \
+            --curie-map "$CURIE_MAP" \
+            --output-dir build/base-mappings
+
+      - name: Render PR mapping report
+        # `rosetta mapping report` renders the same Markdown/HTML, but the
+        # comment-upsert marker (below) needs to be prefixed onto the
+        # Markdown, so this calls mapping/report.py directly via a small
+        # helper script instead.
+        run: |
+          uv run python .github/scripts/render_pr_report.py \
+            --head build/mappings/omop-onz-g.sssom.tsv \
+            --base build/base-mappings/omop-onz-g.sssom.tsv \
+            --output-markdown build/mappings/report.md \
+            --output-html build/mappings/report.html
+
+      - name: Upsert PR comment
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- sssom-rosetta-mapping-report -->';
+            const body = fs.readFileSync('build/mappings/report.md', 'utf8');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find((comment) => comment.body && comment.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: mapping-report-${{ github.event.pull_request.number }}
+          path: |
+            build/mappings/omop-onz-g.sssom.tsv
+            build/mappings/omop-onz-g.ttl
+            build/mappings/report.html
+          if-no-files-found: error

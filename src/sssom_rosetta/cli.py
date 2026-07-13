@@ -1,0 +1,388 @@
+"""Typer CLI for sssom-rosetta, installed as the `rosetta` console script.
+
+Subcommands are grouped under two sub-apps, ``ontology`` and ``mapping``,
+matching the workflow described in AGENTS.md:
+
+- ``rosetta ontology fetch <name>`` — download and cache a registered
+  ontology source (see ``ontology.sources``/``ontology.loader``).
+- ``rosetta mapping validate <csv> <metadata>`` — parse an authored CSVW
+  mapping pair and check schema conformance + referential integrity
+  against both ontology graphs.
+- ``rosetta mapping build <csv> <metadata>`` — same parsing, then write the
+  derived SSSOM/TSV and RDF/Turtle artifacts.
+- ``rosetta mapping report`` — thin wrapper around ``mapping.report``
+  (implemented separately); degrades gracefully if that module doesn't
+  exist yet.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+from typing import Annotated
+
+import typer
+
+from sssom_rosetta.mapping.docs_pages import generate_mapping_pages
+from sssom_rosetta.mapping.io import read_mapping_set_csvw, write_sssom_tsv, write_ttl
+from sssom_rosetta.mapping.report import (
+    diff_mapping_sets,
+    load_mapping_set_tsv,
+    render_html,
+    render_markdown,
+)
+from sssom_rosetta.mapping.validate import SchemaConformanceError, validate_mapping_set
+from sssom_rosetta.models.sssom import MappingSet
+from sssom_rosetta.ontology.loader import (
+    DEFAULT_CACHE_DIR,
+    ChecksumMismatchError,
+    OntologyFetchError,
+    fetch_ontology,
+    load_ontology,
+)
+from sssom_rosetta.ontology.sources import (
+    ONTOLOGY_SOURCES,
+    UnknownOntologySourceError,
+    get_source,
+)
+
+logger = logging.getLogger(__name__)
+
+app = typer.Typer(
+    help="Author, validate, and build SSSOM mappings between RDF ontologies."
+)
+ontology_app = typer.Typer(help="Fetch and cache ontology sources.")
+mapping_app = typer.Typer(help="Author, validate, and build SSSOM mapping sets.")
+docs_app = typer.Typer(help="Generate the Zensical docs site's generated pages.")
+app.add_typer(ontology_app, name="ontology")
+app.add_typer(mapping_app, name="mapping")
+app.add_typer(docs_app, name="docs")
+
+# The two ontology sources every mapping set is validated against. The CLI
+# currently only supports the first ontology pair described in AGENTS.md
+# (ONZ-G <-> OMOP CDM); ``subject_source``/``object_source`` options let a
+# future multi-pair increment override these.
+_DEFAULT_SUBJECT_SOURCE = "omop-cdm"
+_DEFAULT_OBJECT_SOURCE = "onz-g"
+
+
+@ontology_app.command("fetch")
+def ontology_fetch(
+    name: Annotated[
+        str, typer.Argument(help="Registry key, e.g. 'onz-g' or 'omop-cdm'.")
+    ],
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Re-download even if a cached copy exists."),
+    ] = False,
+    cache_dir: Annotated[
+        Path,
+        typer.Option(help="Base directory ontologies are cached under."),
+    ] = DEFAULT_CACHE_DIR,
+) -> None:
+    """Download and cache a registered ontology source, printing the cached path."""
+    try:
+        source = get_source(name)
+    except UnknownOntologySourceError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    try:
+        path = fetch_ontology(source, cache_dir, force=force)
+    except (OntologyFetchError, ChecksumMismatchError) as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    typer.echo(str(path))
+
+
+def _read_and_validate_csvw(
+    csv_path: Path,
+    metadata_path: Path,
+    *,
+    mapping_set_id: str,
+    license: str,  # noqa: A002 - matches the SSSOM field name
+    curie_map: str,
+    subject_source: str,
+    object_source: str,
+    cache_dir: Path,
+) -> tuple[MappingSet, dict[str, str]]:
+    """Parse a CSVW mapping pair and validate it against both ontology graphs.
+
+    Shared by ``mapping validate`` and ``mapping build`` so both subcommands
+    read/validate identically before diverging (validate reports issues;
+    build additionally writes derived artifacts).
+
+    Returns:
+        The validated ``MappingSet`` and the ``curie_map`` used to validate it.
+
+    Raises:
+        typer.Exit: On any parsing/validation failure, after printing a
+            clear error message.
+    """
+    try:
+        parsed_curie_map: dict[str, str] = json.loads(curie_map)
+    except json.JSONDecodeError as exc:
+        typer.echo(f"Error: --curie-map is not valid JSON: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    try:
+        mapping_set = read_mapping_set_csvw(
+            csv_path,
+            metadata_path,
+            mapping_set_id=mapping_set_id,
+            license=license,
+            curie_map=parsed_curie_map,
+        )
+    except SchemaConformanceError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    curie_map_dict = {
+        prefix: str(iri) for prefix, iri in (mapping_set.curie_map or {}).items()
+    }
+    if not curie_map_dict:
+        typer.echo(
+            "Error: mapping set has no curie_map; cannot resolve CURIEs against "
+            'ontology graphs. Pass --curie-map \'{"prefix": "https://...", ...}\'.',
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    try:
+        subject_ontology = get_source(subject_source)
+        object_ontology = get_source(object_source)
+    except UnknownOntologySourceError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    subject_graph = load_ontology(subject_ontology, cache_dir)
+    object_graph = load_ontology(object_ontology, cache_dir)
+
+    try:
+        result = validate_mapping_set(
+            mapping_set,
+            prefix_map=curie_map_dict,
+            subject_graph=subject_graph,
+            object_graph=object_graph,
+        )
+    except SchemaConformanceError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    mappings = result.mapping_set.mappings or []
+    typer.echo(f"Parsed {len(mappings)} mapping(s).")
+    if not result.is_valid:
+        typer.echo(f"Found {len(result.issues)} referential integrity issue(s):")
+        for issue in result.issues:
+            typer.echo(
+                f"  [{issue.mapping_index}] {issue.field}={issue.curie!r}: {issue.reason}"
+            )
+        raise typer.Exit(1)
+
+    return result.mapping_set, curie_map_dict
+
+
+@mapping_app.command("validate")
+def mapping_validate(
+    csv_path: Annotated[Path, typer.Argument(help="Authored mapping CSV.")],
+    metadata_path: Annotated[Path, typer.Argument(help="Paired CSVW metadata JSON.")],
+    mapping_set_id: Annotated[
+        str, typer.Option(help="MappingSet.mapping_set_id (not row data).")
+    ],
+    license: Annotated[  # noqa: A002 - matches the SSSOM field name
+        str, typer.Option(help="MappingSet.license (not row data).")
+    ],
+    curie_map: Annotated[
+        str,
+        typer.Option(
+            "--curie-map",
+            help=(
+                "MappingSet.curie_map as a JSON object string, e.g. "
+                '\'{"omop": "https://w3id.org/omop/ontology/", '
+                '"onz-g": "http://purl.org/ozo/onz-g#"}\'. Not row data, and '
+                "not currently read from the CSVW metadata document (which has "
+                "no standard slot for it)."
+            ),
+        ),
+    ],
+    subject_source: Annotated[
+        str,
+        typer.Option(help="Ontology source name subject_id CURIEs resolve against."),
+    ] = _DEFAULT_SUBJECT_SOURCE,
+    object_source: Annotated[
+        str,
+        typer.Option(help="Ontology source name object_id CURIEs resolve against."),
+    ] = _DEFAULT_OBJECT_SOURCE,
+    cache_dir: Annotated[
+        Path,
+        typer.Option(help="Base directory ontologies are cached under."),
+    ] = DEFAULT_CACHE_DIR,
+) -> None:
+    """Validate an authored CSVW mapping set: schema + referential integrity.
+
+    ``mapping_set_id``, ``license``, and ``curie_map`` are required options
+    rather than read from the CSVW metadata document, since they're
+    ``MappingSet``-level metadata (not row data) and the CSVW Metadata
+    Vocabulary has no standard slot for them; this keeps parsing unambiguous
+    and matches ``mapping.io.read_mapping_set_csvw``'s own signature.
+    """
+    _read_and_validate_csvw(
+        csv_path,
+        metadata_path,
+        mapping_set_id=mapping_set_id,
+        license=license,
+        curie_map=curie_map,
+        subject_source=subject_source,
+        object_source=object_source,
+        cache_dir=cache_dir,
+    )
+    typer.echo("Validation passed.")
+
+
+@mapping_app.command("build")
+def mapping_build(
+    csv_path: Annotated[Path, typer.Argument(help="Authored mapping CSV.")],
+    metadata_path: Annotated[Path, typer.Argument(help="Paired CSVW metadata JSON.")],
+    mapping_set_id: Annotated[
+        str, typer.Option(help="MappingSet.mapping_set_id (not row data).")
+    ],
+    license: Annotated[  # noqa: A002 - matches the SSSOM field name
+        str, typer.Option(help="MappingSet.license (not row data).")
+    ],
+    curie_map: Annotated[
+        str,
+        typer.Option(
+            "--curie-map",
+            help=(
+                "MappingSet.curie_map as a JSON object string. See "
+                "'rosetta mapping validate --help' for details."
+            ),
+        ),
+    ],
+    output_dir: Annotated[
+        Path, typer.Option(help="Directory derived TSV/TTL artifacts are written to.")
+    ] = Path("build/mappings"),
+    subject_source: Annotated[
+        str,
+        typer.Option(help="Ontology source name subject_id CURIEs resolve against."),
+    ] = _DEFAULT_SUBJECT_SOURCE,
+    object_source: Annotated[
+        str,
+        typer.Option(help="Ontology source name object_id CURIEs resolve against."),
+    ] = _DEFAULT_OBJECT_SOURCE,
+    cache_dir: Annotated[
+        Path,
+        typer.Option(help="Base directory ontologies are cached under."),
+    ] = DEFAULT_CACHE_DIR,
+) -> None:
+    """Validate an authored CSVW mapping set, then write derived SSSOM/TSV + TTL."""
+    mapping_set, curie_map_dict = _read_and_validate_csvw(
+        csv_path,
+        metadata_path,
+        mapping_set_id=mapping_set_id,
+        license=license,
+        curie_map=curie_map,
+        subject_source=subject_source,
+        object_source=object_source,
+        cache_dir=cache_dir,
+    )
+
+    tsv_path = output_dir / f"{csv_path.stem}.sssom.tsv"
+    ttl_path = output_dir / f"{csv_path.stem}.ttl"
+    write_sssom_tsv(mapping_set, tsv_path)
+    write_ttl(mapping_set, ttl_path, prefix_map=curie_map_dict)
+
+    typer.echo(str(tsv_path))
+    typer.echo(str(ttl_path))
+
+
+@mapping_app.command("report")
+def mapping_report(
+    head: Annotated[
+        Path,
+        typer.Option(help="Generated head '.sssom.tsv' (e.g. from `mapping build`)."),
+    ],
+    base: Annotated[
+        Path | None,
+        typer.Option(
+            help=(
+                "Generated base '.sssom.tsv' to diff against, if any. Omit "
+                "(or point at a nonexistent path) to render every head "
+                "mapping as 'added', e.g. for a docs page or a PR that adds "
+                "the mapping set for the first time."
+            ),
+        ),
+    ] = None,
+    title: Annotated[str, typer.Option(help="Report title.")] = "Mapping report",
+    output_markdown: Annotated[
+        Path | None, typer.Option(help="Write the rendered Markdown here, if given.")
+    ] = None,
+    output_html: Annotated[
+        Path | None, typer.Option(help="Write the rendered HTML here, if given.")
+    ] = None,
+) -> None:
+    """Render a Markdown (+ optional HTML) diff report from generated SSSOM/TSV file(s).
+
+    Reads from the *generated* ``.sssom.tsv`` (see ``mapping build``), not
+    the hand-authored CSV, so the report reflects fully resolved/validated
+    data (see ``mapping.report``'s module docstring). If neither
+    ``--output-markdown`` nor ``--output-html`` is given, the Markdown is
+    printed to stdout.
+    """
+    head_mapping_set = load_mapping_set_tsv(head)
+    base_mapping_set = (
+        load_mapping_set_tsv(base) if base is not None and base.exists() else None
+    )
+
+    diff = diff_mapping_sets(base_mapping_set, head_mapping_set)
+    markdown_text = render_markdown(diff, mapping_set=head_mapping_set, title=title)
+
+    if output_markdown is not None:
+        output_markdown.parent.mkdir(parents=True, exist_ok=True)
+        output_markdown.write_text(markdown_text)
+    if output_html is not None:
+        output_html.parent.mkdir(parents=True, exist_ok=True)
+        output_html.write_text(render_html(markdown_text))
+    if output_markdown is None and output_html is None:
+        typer.echo(markdown_text)
+
+
+@docs_app.command("generate-mapping-pages")
+def docs_generate_mapping_pages(
+    build_dir: Annotated[
+        Path,
+        typer.Option(help="Directory containing generated <name>.sssom.tsv files."),
+    ] = Path("build/mappings"),
+    docs_dir: Annotated[
+        Path,
+        typer.Option(
+            help="Directory generated docs/mappings/<name>.md pages are written to."
+        ),
+    ] = Path("docs/mappings"),
+) -> None:
+    """Regenerate `docs/mappings/*.md` from `build/mappings/*.sssom.tsv`.
+
+    Reuses `mapping.report`'s renderer (`load_mapping_set_tsv` +
+    `diff_mapping_sets(None, ...)` + `render_markdown`) via
+    `mapping.docs_pages.generate_mapping_pages`, so the published docs site
+    and the PR report share one rendering code path, per AGENTS.md.
+    """
+    written = generate_mapping_pages(build_dir, docs_dir)
+    if not written:
+        typer.echo(
+            f"No .sssom.tsv files found under {build_dir}; nothing generated.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    for page_path in written:
+        typer.echo(str(page_path))
+
+
+__all__ = ["app", "ONTOLOGY_SOURCES"]
+
+
+if __name__ == "__main__":
+    app()

@@ -1,0 +1,14 @@
+[project]
+site_name = "sssom-rosetta"
+site_description = "SSSOM mappings between RDF/OWL ontologies used in Dutch healthcare, starting with ONZ-G and OMOP CDM OWL."
+
+nav = [
+  {"Home" = "index.md"},
+  {"Ontologies" = [
+     "ontologies/onz-g.md",
+     "ontologies/omop-cdm.md"
+  ]},
+  {"Mappings" = [
+     "mappings/omop-onz-g.md"
+  ]}
+]
