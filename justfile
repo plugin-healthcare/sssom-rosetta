@@ -75,16 +75,20 @@ vocab-ingest name zip:
 vocab-build-loinc-snomed:
     uv run rosetta vocabulary build-loinc-snomed
 
+# Build snomed-international.ttl from the ingested SNOMED CT International release.
+vocab-build-snomed-international:
+    uv run rosetta vocabulary build-snomed-international
+
 # Build omop.ttl from the ingested OMOP/Athena vocabulary bundle.
 vocab-build-omop:
     uv run rosetta vocabulary build-omop
 
-# Merge loinc-snomed.ttl + omop.ttl into build/vocabularies/rosetta-vocabularies.ttl.
+# Merge the vocabulary graphs into build/vocabularies/rosetta-vocabularies.ttl.
 vocab-merge:
     uv run rosetta vocabulary merge
 
-# Build both vocabulary graphs and the merged rosetta-vocabularies.ttl.
-vocab-build: vocab-build-loinc-snomed vocab-build-omop vocab-merge
+# Build all vocabulary graphs and the merged rosetta-vocabularies.ttl.
+vocab-build: vocab-build-loinc-snomed vocab-build-snomed-international vocab-build-omop vocab-merge
 
 # Build the Zensical documentation site into site/.
 docs-build: docs-pages

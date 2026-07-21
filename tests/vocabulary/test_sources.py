@@ -27,6 +27,13 @@ def test_registry_contains_omop() -> None:
     assert source.download_page == "https://athena.ohdsi.org/"
 
 
+def test_registry_contains_snomed_international() -> None:
+    source = VOCABULARY_SOURCES["snomed-international"]
+    assert source.name == "snomed-international"
+    assert source.kind == "rf2"
+    assert source.version == "20260101"
+
+
 def test_get_vocabulary_source_returns_registered() -> None:
     source = get_vocabulary_source("omop")
     assert isinstance(source, VocabularySource)

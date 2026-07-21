@@ -48,7 +48,7 @@ from sssom_rosetta.ontology.sources import (
     UnknownOntologySourceError,
     get_source,
 )
-from sssom_rosetta.vocabulary import loinc_snomed, merge, omop
+from sssom_rosetta.vocabulary import loinc_snomed, merge, omop, snomed_international
 from sssom_rosetta.vocabulary.fetch import (
     DEFAULT_CACHE_DIR as VOCAB_CACHE_DIR,
     VocabularyChecksumMismatchError,
@@ -492,7 +492,10 @@ DEFAULT_VOCAB_OUTPUT_DIR = Path("build/vocabularies")
 @vocabulary_app.command("ingest")
 def vocabulary_ingest(
     name: Annotated[
-        str, typer.Argument(help="Registry key: 'loinc-snomed' or 'omop'.")
+        str,
+        typer.Argument(
+            help="Registry key: 'loinc-snomed', 'snomed-international' or 'omop'."
+        ),
     ],
     zip_path: Annotated[
         Path,
@@ -550,6 +553,33 @@ def vocabulary_build_loinc_snomed(
     typer.echo(str(output_path))
 
 
+@vocabulary_app.command("build-snomed-international")
+def vocabulary_build_snomed_international(
+    output_dir: Annotated[
+        Path, typer.Option(help="Directory the Turtle graph is written to.")
+    ] = DEFAULT_VOCAB_OUTPUT_DIR,
+    cache_dir: Annotated[
+        Path, typer.Option(help="Base directory releases are extracted under.")
+    ] = VOCAB_CACHE_DIR,
+) -> None:
+    """Build ``snomed-international.ttl`` from the ingested International release."""
+    source = get_vocabulary_source("snomed-international")
+    release_dir = cache_dir_for(source, cache_dir)
+    if not release_dir.is_dir():
+        typer.echo(
+            f"Error: no ingested release at {release_dir}. Run "
+            "'rosetta vocabulary ingest snomed-international <zip>' first.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    graph = snomed_international.build_from_release(release_dir)
+    output_path = snomed_international.write_ttl(
+        graph, output_dir / "snomed-international.ttl"
+    )
+    typer.echo(str(output_path))
+
+
 @vocabulary_app.command("build-omop")
 def vocabulary_build_omop(
     output_dir: Annotated[
@@ -581,14 +611,26 @@ def vocabulary_merge(
         Path, typer.Option(help="Directory the merged Turtle graph is written to.")
     ] = DEFAULT_VOCAB_OUTPUT_DIR,
 ) -> None:
-    """Merge ``loinc-snomed.ttl`` + ``omop.ttl`` into ``rosetta-vocabularies.ttl``."""
-    inputs = [output_dir / "loinc-snomed.ttl", output_dir / "omop.ttl"]
-    missing = [str(path) for path in inputs if not path.exists()]
-    if missing:
+    """Merge the vocabulary graphs into ``rosetta-vocabularies.ttl``.
+
+    Combines whichever of ``loinc-snomed.ttl``, ``snomed-international.ttl`` and
+    ``omop.ttl`` are present. Because all mint identical ``sct:`` IRIs, the
+    LOINC-SNOMED extension concepts attach to the International hierarchy (and
+    OMOP concept_ids to both) automatically once unioned. At least two inputs
+    are required for a merge to be meaningful.
+    """
+    candidates = [
+        output_dir / "loinc-snomed.ttl",
+        output_dir / "snomed-international.ttl",
+        output_dir / "omop.ttl",
+    ]
+    inputs = [path for path in candidates if path.exists()]
+    if len(inputs) < 2:
+        present = ", ".join(str(path) for path in inputs) or "none"
         typer.echo(
-            "Error: missing input graph(s): "
-            + ", ".join(missing)
-            + ". Run 'build-loinc-snomed' and 'build-omop' first.",
+            "Error: need at least two input graphs to merge (found: "
+            f"{present}). Run 'build-loinc-snomed', "
+            "'build-snomed-international' and/or 'build-omop' first.",
             err=True,
         )
         raise typer.Exit(1)

@@ -101,12 +101,16 @@ def ingest_zip(
     return target_dir
 
 
-def find_file(root: Path, *, prefix: str = "", suffix: str = "") -> Path:
+def find_file(
+    root: Path, *, prefix: str = "", suffix: str = "", contains: str = ""
+) -> Path:
     """Find exactly one file under ``root`` matching ``prefix``/``suffix``.
 
     RF2 and Athena packages nest files in per-release subdirectories with
     date-stamped names, so callers locate files by pattern rather than exact
-    path.
+    path. ``contains`` further constrains matches to those whose full path
+    contains the given substring (e.g. ``"/Snapshot/"`` to exclude the
+    ``Full/`` and ``Delta/`` copies an International RF2 package also ships).
 
     Raises:
         VocabularyIngestError: If zero or more than one file matches.
@@ -117,15 +121,18 @@ def find_file(root: Path, *, prefix: str = "", suffix: str = "") -> Path:
         if path.is_file()
         and path.name.startswith(prefix)
         and path.name.endswith(suffix)
+        and (contains in str(path))
     ]
     if not matches:
         raise VocabularyIngestError(
-            f"No file matching prefix={prefix!r} suffix={suffix!r} under {root}"
+            f"No file matching prefix={prefix!r} suffix={suffix!r} "
+            f"contains={contains!r} under {root}"
         )
     if len(matches) > 1:
         joined = ", ".join(str(match) for match in sorted(matches))
         raise VocabularyIngestError(
             f"Expected exactly one file matching prefix={prefix!r} "
-            f"suffix={suffix!r} under {root}, found: {joined}"
+            f"suffix={suffix!r} contains={contains!r} under {root}, "
+            f"found: {joined}"
         )
     return matches[0]

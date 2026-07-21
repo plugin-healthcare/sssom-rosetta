@@ -8,7 +8,7 @@ from pathlib import Path
 
 import polars as pl
 import pytest
-from rdflib import Graph
+from rdflib import Graph, Literal
 from rdflib.namespace import SKOS
 
 from sssom_rosetta.vocabulary import loinc_snomed, merge, omop
@@ -93,6 +93,62 @@ def test_merge_ttl_files_roundtrip(tmp_path: Path) -> None:
     reloaded = Graph()
     reloaded.parse(str(out), format="turtle")
     assert (omop_iri("1002"), SKOS.exactMatch, sct_iri("44054006")) in reloaded
+
+
+def _tiny_international_graph() -> Graph:
+    """A backbone where 73211009 (the extension parent) is typed and labelled,
+    and links up to root 138875005."""
+    concept = pl.DataFrame({"id": ["73211009", "138875005"], "active": ["1", "1"]})
+    description = pl.DataFrame(
+        {
+            "id": ["d1", "d2"],
+            "active": ["1", "1"],
+            "conceptId": ["73211009", "138875005"],
+            "languageCode": ["en", "en"],
+            "typeId": [loinc_snomed.rf2.FSN_TYPE_ID, loinc_snomed.rf2.FSN_TYPE_ID],
+            "term": ["Diabetes mellitus (disorder)", "SNOMED CT Concept"],
+        }
+    )
+    language = pl.DataFrame(
+        {
+            "id": ["l1", "l2"],
+            "active": ["1", "1"],
+            "referencedComponentId": ["d1", "d2"],
+            "acceptabilityId": [loinc_snomed.rf2.PREFERRED_ACCEPTABILITY_ID] * 2,
+        }
+    )
+    relationship = pl.DataFrame(
+        {
+            "id": ["r1"],
+            "active": ["1"],
+            "sourceId": ["73211009"],
+            "destinationId": ["138875005"],
+            "typeId": [loinc_snomed.rf2.IS_A_TYPE_ID],
+        }
+    )
+    return loinc_snomed.build_graph(concept, description, language, relationship)
+
+
+def test_merge_connects_extension_to_international_backbone() -> None:
+    from rdflib.namespace import RDF, RDFS
+
+    merged = merge.merge_graphs(
+        _tiny_loinc_snomed_graph(), _tiny_international_graph()
+    )
+
+    parent = sct_iri("73211009")
+    root = sct_iri("138875005")
+    # In the extension graph alone, 73211009 was a bare object. After merge it
+    # is a typed, labelled Concept that reaches the root.
+    assert (parent, RDF.type, SKOS.Concept) in merged
+    assert (
+        parent,
+        SKOS.prefLabel,
+        Literal("Diabetes mellitus (disorder)", lang="en"),
+    ) in merged
+    assert (parent, RDFS.subClassOf, root) in merged
+    # ... and the extension child reaches the root transitively.
+    assert (sct_iri("44054006"), RDFS.subClassOf, parent) in merged
 
 
 # --- fetch/ingest ---------------------------------------------------------

@@ -66,6 +66,20 @@ VOCABULARY_SOURCES: dict[str, VocabularySource] = {
         ),
         download_page="https://athena.ohdsi.org/",
     ),
+    "snomed-international": VocabularySource(
+        name="snomed-international",
+        version="20260101",
+        kind="rf2",
+        description=(
+            "SNOMED CT International Edition (core module 900000000000207008), "
+            "distributed as an RF2 package. Supplies the top-level concept "
+            "hierarchy (Body structure, Clinical finding, Observable entity, "
+            "Substance, ...) up to the root that the LOINC Extension depends "
+            "on. Pinned to the International release targeted by the ingested "
+            "LOINC-SNOMED extension's module-dependency refset."
+        ),
+        download_page="https://www.nlm.nih.gov/healthit/snomedct/international.html",
+    ),
 }
 
 
