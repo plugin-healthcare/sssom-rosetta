@@ -127,7 +127,7 @@ ex:mammals rdf:type skos:Concept;
 - `sssom` (sssom-py) — reference implementation; used for SSSOM/TSV read/write and for validation parity with the wider SSSOM ecosystem, so the TSV/YAML-header format isn't reimplemented.
 - `pydantic` — runtime validation for authored mappings (already the gen-pydantic output base class).
 - `typer` — CLI, consistent with the rest of the plugin-healthcare tooling; the app is installed as the `rosetta` console script (`[project.scripts] rosetta = "sssom_rosetta.cli:app"`).
-- `polars` — any tabular analysis of mapping sets (coverage stats, diffs); also used to read/validate the authored CSV files.
+- `polars` — any tabular analysis of mapping sets (coverage stats, diffs); also used to read/validate the authored CSV files, and to parse the large LOINC-SNOMED RF2 and OMOP/Athena terminology tables in the `rosetta vocabulary` pipeline.
 - `zensical` — static documentation site generator for `/docs`, published to GitHub Pages.
 
 ### Documentation site
@@ -164,6 +164,65 @@ A GitHub Actions workflow triggers on PRs that change `mappings/**` (CSV + CSVW 
 4. Post the Markdown report as a PR comment (upsert, not duplicate on re-runs) and upload the generated `.sssom.tsv`/`.ttl`/HTML report as build artifacts.
 
 On merge to the default branch, a separate CI job re-runs `rosetta mapping build` to regenerate `build/mappings/*.{sssom.tsv,ttl}`, regenerates `docs/mappings/*.md` from those files, runs `zensical build`, and publishes `site/` to GitHub Pages.
+
+## Integrating large terminologies (LOINC-SNOMED + OMOP) into one TTL
+
+Alongside the curated SSSOM mapping sets, the `rosetta vocabulary` sub-app builds a single merged RDF/Turtle graph that integrates large reference terminologies: the **LOINC-SNOMED Ontology** and the **OHDSI/OMOP Standardized Vocabularies**, so that OMOP `concept_id`s are cross-linked with SNOMED, LOINC, RxNorm and ICD10/ICD10CM concepts. This is a *vocabulary graph* built from the terminology releases directly, distinct from the hand-authored SSSOM mappings under `mappings/`. RF2/CSV tables are parsed with **polars** and the graph is built with **rdflib**.
+
+Output artifacts (all under `build/vocabularies/`, gitignored, regenerated on demand):
+
+- `loinc-snomed.ttl` — SKOS/RDFS graph from the LOINC-SNOMED RF2 release.
+- `omop.ttl` — OMOP concept graph, each `concept_id` a hub node cross-linked to its native source-vocabulary concept.
+- `rosetta-vocabularies.ttl` — the merged graph; shared `sct:`/`loinc:` IRIs connect OMOP `concept_id`s to the LOINC-SNOMED hierarchy.
+
+### What you need to download first
+
+Both releases are **licence-gated**, so there is no open download URL to fetch automatically. You must download the release archives manually (accepting the relevant licences) and then *ingest* them locally:
+
+1. **LOINC-SNOMED Ontology** (registry key `loinc-snomed`, currently pinned to v2.82).
+   - Download the RF2 package ZIP from <https://loincsnomed.org/downloads> (e.g. `SnomedCT_LOINC_Extension_...zip`).
+   - Requires a **SNOMED International affiliate licence** *and* acceptance of the **LOINC licence** — it is distributed as a SNOMED CT extension (module `11010000107 |LOINC Extension module|`) in standard RF2 format.
+2. **OHDSI/OMOP Standardized Vocabularies** (registry key `omop`).
+   - Download a vocabulary bundle ZIP from <https://athena.ohdsi.org/> (Athena account required). When selecting vocabularies, tick at least: **SNOMED, LOINC, RxNorm, RxNorm Extension, ICD10, ICD10CM**. (Do *not* select CPT4 unless you have a UMLS licence and are prepared to run its `cpt4.jar` reconstitution step; it is not needed here.)
+   - The bundle is a ZIP of tab-delimited files with a `.csv` extension (`CONCEPT.csv`, `CONCEPT_RELATIONSHIP.csv`, ...).
+
+### How to start the ingest
+
+Ingesting verifies the ZIP's SHA-256 checksum (when one is pinned in `vocabulary/sources.py`) and extracts it under `data/vocabularies/<name>/<version>/` (gitignored). It's idempotent — an already-extracted release is reused unless you pass `--force`.
+
+```
+# Ingest each downloaded ZIP (paths are wherever you saved them):
+uv run rosetta vocabulary ingest loinc-snomed ~/Downloads/SnomedCT_LOINC_Extension_PRODUCTION_2.82.zip
+uv run rosetta vocabulary ingest omop ~/Downloads/athena_vocabularies.zip
+
+# or via just:
+just vocab-ingest loinc-snomed ~/Downloads/SnomedCT_LOINC_Extension_PRODUCTION_2.82.zip
+just vocab-ingest omop ~/Downloads/athena_vocabularies.zip
+```
+
+### Build and merge
+
+Once both releases are ingested, build the graphs and merge them:
+
+```
+uv run rosetta vocabulary build-loinc-snomed   # -> build/vocabularies/loinc-snomed.ttl
+uv run rosetta vocabulary build-omop           # -> build/vocabularies/omop.ttl
+uv run rosetta vocabulary merge                # -> build/vocabularies/rosetta-vocabularies.ttl
+
+# or the whole chain in one step:
+just vocab-build
+```
+
+The `vocab-*` recipes are intentionally **not** part of `just build-all`, since they depend on manually-downloaded, licence-gated ZIPs being ingested first.
+
+### How the graph is shaped
+
+- SNOMED/LOINC-extension concepts use IRIs `http://snomed.info/id/{sctid}` (`sct:` prefix); OMOP concepts use `https://w3id.org/omop/concept/{concept_id}` (`omopconcept:` prefix); source codes use `loinc:`, `rxnorm:`, `icd10:`, `icd10cm:` namespaces.
+- Each OMOP concept carries `skos:prefLabel` (concept name), `skos:notation` (source code), and a `skos:exactMatch` to its native source IRI (e.g. an OMOP SNOMED concept → `sct:<sctid>`). Concepts with no native code (e.g. `RxNorm Extension`) stay OMOP-minted.
+- Relationships map to SKOS: OMOP `Maps to` → `skos:exactMatch`, `Is a` / RF2 `Is a` → `skos:broadMatch` (child → parent), OMOP `Subsumes` → `skos:narrowMatch`; SNOMED synonyms → `skos:altLabel`. `broadMatch` direction follows the project convention (subject is the more specific concept).
+- The graph is a lightweight SKOS/RDFS representation. Materialising the full OWL-DL logical definitions from the RF2 OWL Expression refset (via `snomed-owl-toolkit` + ELK) is a deliberately deferred follow-up — see `.agents/plan/2026-07-21-owl-dl-classification-deferral-note.md`.
+
+See `docs/vocabularies/index.md` for the full provenance, IRI, and relationship reference.
 
 ## Using Protege as the default viewer for the full ontology
 

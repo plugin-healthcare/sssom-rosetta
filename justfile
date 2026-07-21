@@ -62,6 +62,30 @@ report:
 docs-pages:
     uv run rosetta docs generate-mapping-pages
 
+# --- Vocabulary integration (LOINC-SNOMED RF2 + OMOP/Athena) ---
+# These releases are licence-gated, so the curator downloads the ZIPs manually
+# and ingests them; there is no open download URL to fetch from. For that
+# reason the vocab-* recipes are intentionally NOT part of `build-all`.
+
+# Ingest a locally-downloaded release ZIP (e.g. `just vocab-ingest loinc-snomed path/to.zip`).
+vocab-ingest name zip:
+    uv run rosetta vocabulary ingest {{ name }} {{ zip }}
+
+# Build loinc-snomed.ttl from the ingested LOINC-SNOMED RF2 release.
+vocab-build-loinc-snomed:
+    uv run rosetta vocabulary build-loinc-snomed
+
+# Build omop.ttl from the ingested OMOP/Athena vocabulary bundle.
+vocab-build-omop:
+    uv run rosetta vocabulary build-omop
+
+# Merge loinc-snomed.ttl + omop.ttl into build/vocabularies/rosetta-vocabularies.ttl.
+vocab-merge:
+    uv run rosetta vocabulary merge
+
+# Build both vocabulary graphs and the merged rosetta-vocabularies.ttl.
+vocab-build: vocab-build-loinc-snomed vocab-build-omop vocab-merge
+
 # Build the Zensical documentation site into site/.
 docs-build: docs-pages
     uv run zensical build

@@ -48,6 +48,18 @@ from sssom_rosetta.ontology.sources import (
     UnknownOntologySourceError,
     get_source,
 )
+from sssom_rosetta.vocabulary import loinc_snomed, merge, omop
+from sssom_rosetta.vocabulary.fetch import (
+    DEFAULT_CACHE_DIR as VOCAB_CACHE_DIR,
+    VocabularyChecksumMismatchError,
+    VocabularyIngestError,
+    cache_dir_for,
+    ingest_zip,
+)
+from sssom_rosetta.vocabulary.sources import (
+    UnknownVocabularySourceError,
+    get_vocabulary_source,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +72,15 @@ docs_app = typer.Typer(help="Generate the Zensical docs site's generated pages."
 protege_app = typer.Typer(
     help="Build a combined ontologies + mappings OWL file for exploring in Protege."
 )
+vocabulary_app = typer.Typer(
+    help="Ingest large terminology releases (LOINC-SNOMED RF2, OMOP/Athena) and "
+    "build a merged vocabulary Turtle graph."
+)
 app.add_typer(ontology_app, name="ontology")
 app.add_typer(mapping_app, name="mapping")
 app.add_typer(docs_app, name="docs")
 app.add_typer(protege_app, name="protege")
+app.add_typer(vocabulary_app, name="vocabulary")
 
 # The two ontology sources every mapping set is validated against. The CLI
 # currently only supports the first ontology pair described in AGENTS.md
@@ -466,6 +483,117 @@ def protege_build(
         combined.add(triple)
 
     combined.serialize(destination=str(output_path), format="turtle")
+    typer.echo(str(output_path))
+
+
+DEFAULT_VOCAB_OUTPUT_DIR = Path("build/vocabularies")
+
+
+@vocabulary_app.command("ingest")
+def vocabulary_ingest(
+    name: Annotated[
+        str, typer.Argument(help="Registry key: 'loinc-snomed' or 'omop'.")
+    ],
+    zip_path: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to the locally-downloaded, licence-gated release ZIP."
+        ),
+    ],
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Re-extract even if a cached copy exists."),
+    ] = False,
+    cache_dir: Annotated[
+        Path,
+        typer.Option(help="Base directory releases are extracted under."),
+    ] = VOCAB_CACHE_DIR,
+) -> None:
+    """Verify and extract a curator-provided release ZIP into the local cache."""
+    try:
+        source = get_vocabulary_source(name)
+    except UnknownVocabularySourceError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    try:
+        target_dir = ingest_zip(source, zip_path, cache_dir, force=force)
+    except (VocabularyIngestError, VocabularyChecksumMismatchError) as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    typer.echo(str(target_dir))
+
+
+@vocabulary_app.command("build-loinc-snomed")
+def vocabulary_build_loinc_snomed(
+    output_dir: Annotated[
+        Path, typer.Option(help="Directory the Turtle graph is written to.")
+    ] = DEFAULT_VOCAB_OUTPUT_DIR,
+    cache_dir: Annotated[
+        Path, typer.Option(help="Base directory releases are extracted under.")
+    ] = VOCAB_CACHE_DIR,
+) -> None:
+    """Build ``loinc-snomed.ttl`` from the ingested LOINC-SNOMED RF2 release."""
+    source = get_vocabulary_source("loinc-snomed")
+    release_dir = cache_dir_for(source, cache_dir)
+    if not release_dir.is_dir():
+        typer.echo(
+            f"Error: no ingested release at {release_dir}. Run "
+            "'rosetta vocabulary ingest loinc-snomed <zip>' first.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    graph = loinc_snomed.build_from_release(release_dir)
+    output_path = loinc_snomed.write_ttl(graph, output_dir / "loinc-snomed.ttl")
+    typer.echo(str(output_path))
+
+
+@vocabulary_app.command("build-omop")
+def vocabulary_build_omop(
+    output_dir: Annotated[
+        Path, typer.Option(help="Directory the Turtle graph is written to.")
+    ] = DEFAULT_VOCAB_OUTPUT_DIR,
+    cache_dir: Annotated[
+        Path, typer.Option(help="Base directory releases are extracted under.")
+    ] = VOCAB_CACHE_DIR,
+) -> None:
+    """Build ``omop.ttl`` from the ingested OMOP/Athena vocabulary bundle."""
+    source = get_vocabulary_source("omop")
+    release_dir = cache_dir_for(source, cache_dir)
+    if not release_dir.is_dir():
+        typer.echo(
+            f"Error: no ingested release at {release_dir}. Run "
+            "'rosetta vocabulary ingest omop <zip>' first.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    graph = omop.build_from_release(release_dir)
+    output_path = omop.write_ttl(graph, output_dir / "omop.ttl")
+    typer.echo(str(output_path))
+
+
+@vocabulary_app.command("merge")
+def vocabulary_merge(
+    output_dir: Annotated[
+        Path, typer.Option(help="Directory the merged Turtle graph is written to.")
+    ] = DEFAULT_VOCAB_OUTPUT_DIR,
+) -> None:
+    """Merge ``loinc-snomed.ttl`` + ``omop.ttl`` into ``rosetta-vocabularies.ttl``."""
+    inputs = [output_dir / "loinc-snomed.ttl", output_dir / "omop.ttl"]
+    missing = [str(path) for path in inputs if not path.exists()]
+    if missing:
+        typer.echo(
+            "Error: missing input graph(s): "
+            + ", ".join(missing)
+            + ". Run 'build-loinc-snomed' and 'build-omop' first.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    output_path = merge.merge_ttl_files(inputs, output_dir / "rosetta-vocabularies.ttl")
     typer.echo(str(output_path))
 
 
