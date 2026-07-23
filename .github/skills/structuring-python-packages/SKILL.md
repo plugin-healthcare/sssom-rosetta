@@ -1,6 +1,6 @@
 ---
 name: structuring-python-packages
-description: "Use when creating, scaffolding, or restructuring a Python package or library: setting up the src-layout, a pyproject.toml with the uv_build backend, tests, and a runnable example. Applies wingman's Python conventions on top of uv init."
+description: "Use when creating, scaffolding, or restructuring a Python package or library: setting up the src-layout, a pyproject.toml with the uv_build backend, tests, and a runnable example. Applies Tara's Python conventions on top of uv init."
 ---
 
 # Structuring Python packages
@@ -49,31 +49,31 @@ in `pyproject.toml` and a `py.typed` marker.
   (native type hints, `pathlib`, `logging` not `print`, ruff).
 - Tests go in top-level `tests/`, never inside `src/`. Run with `uv run pytest`.
 - Lint and format before done: `uv run ruff check --fix && uv run ruff format`.
-- Type-check with `ty`: `uv run ty check .`. Wingman always uses `ty`.
+- Type-check with `ty`: `uv run ty check .`. Tara always uses `ty`.
 
 ## Opinionated tooling standard
 
-`uv init` writes no tool config, so wingman ships one. Run `wingman standards`
+`uv init` writes no tool config, so Tara ships one. Run `tara standards`
 to see, per category, how a repo differs from the baseline (`ruff`, `pytest`,
 `ty`, `uv`, plus pre-commit). It is non-destructive: it writes
 `.pre-commit-config.yaml` only when absent and never overwrites or edits an
 existing config that differs, it only warns.
 
-To apply the tool config, append wingman's canonical block to the generated
-`pyproject.toml` (this is what `wingman check` reads):
+To apply the tool config, append Tara's canonical block to the generated
+`pyproject.toml` (this is what `tara check` reads):
 
 ```
-wingman standards --show >> pyproject.toml
+tara standards --show >> pyproject.toml
 ```
 
 The baseline uses ruff `select = ["ALL"]` with a curated ignore list,
 `line-length = 120`, google docstrings, banned relative imports, strict pytest
 options, a `[tool.ty]` rules block, and `[tool.uv] exclude-newer = "14 days"` so
 freshly published (potentially compromised) versions are held back. The
-`wingman check` gate runs `uv audit`, which flags known CVEs and adverse project
+`tara check` gate runs `uv audit`, which flags known CVEs and adverse project
 statuses (archived / deprecated / quarantined). `uv audit` and the duration
 `exclude-newer` need uv >= 0.11. Every dependency must carry a version constraint;
-`wingman standards` warns about unpinned ones.
+`tara standards` warns about unpinned ones.
 
 Enable the hooks once with `uv run pre-commit install`.
 

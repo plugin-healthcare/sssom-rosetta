@@ -20,7 +20,7 @@ doubt, pick the highest level of change in the release.
 ## Changelog
 
 Keep a `CHANGELOG.md` in the Keep a Changelog format. Seed it once with
-`wingman new changelog` (writes `CHANGELOG.md` at the repo root):
+`tara new changelog` (writes `CHANGELOG.md` at the repo root):
 
 - An `## [Unreleased]` section at the top collects changes as they land.
 - Group entries under `Added`, `Changed`, `Fixed`, `Removed`, `Deprecated`,
@@ -51,7 +51,7 @@ main  <-  feature/<name>   (optional smaller branches off the feature branch)
 
 ## CI and hooks
 
-- CI should run the same gate as local: `wingman check` (lint, format check, tests).
+- CI should run the same gate as local: `tara check` (lint, format check, tests).
   A release is only cut from a green pipeline on `main`.
 - Recommend a pre-commit hook that runs `uv run ruff check` and `uv run ruff format
   --check` so lint failures never reach CI. Keep the hook fast; leave the full test
@@ -61,7 +61,7 @@ main  <-  feature/<name>   (optional smaller branches off the feature branch)
 
 ## Release steps
 
-1. Confirm the gate passes on `main`: `wingman check` (and CI is green).
+1. Confirm the gate passes on `main`: `tara check` (and CI is green).
 2. Update `CHANGELOG.md`: promote `Unreleased` to the new version with today's date.
 3. Bump the version in `pyproject.toml` to match, following semver above.
 4. Check the increment fits the overall project: no half-finished features, docs

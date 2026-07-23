@@ -99,15 +99,15 @@ Additional instructions for Python projects. Applied on top of the base instruct
   known CVEs and adverse project statuses (PEP 792: archived / deprecated /
   quarantined). Requires uv >= 0.11.
 - Every dependency must declare a version constraint (e.g. `httpx>=0.27`), never a
-  bare package name. `wingman standards` flags unpinned dependencies.
+  bare package name. `tara standards` flags unpinned dependencies.
 
 ## Code Style
 
 - Formatter and linter: `ruff`. Run `uv run ruff check --fix && uv run ruff format`.
 - The ruff baseline is `select = ["ALL"]` with a curated ignore list, line-length
-  120, and google docstrings. Run `wingman standards --show` for the canonical config.
+  120, and google docstrings. Run `tara standards --show` for the canonical config.
 - Type hints on all public functions and methods. Type-check with `ty`
-  (`uv run ty check .`); wingman always uses `ty`, not mypy.
+  (`uv run ty check .`); tara always uses `ty`, not mypy.
 - Prefer `pathlib.Path` over `os.path`.
 - No bare `except:`; always catch specific exceptions.
 - Run the pre-commit hooks (`uv run pre-commit install` once); they run ruff and ty.

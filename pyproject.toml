@@ -3,7 +3,7 @@ name = "sssom-rosetta"
 version = "0.1.0"
 description = "SSSOM-based mappings of most commonly used information models and vocabularies in Dutch Healthcare."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "csvw>=3.0,<5",
     "markdown>=3.10,<4",
@@ -13,18 +13,18 @@ dependencies = [
     "sssom>=0.4.21,<0.5",
     "sssom-schema==1.1.0a5",
     "typer>=0.26,<0.27",
-    "wingman",
+    "tara-dev",
 ]
 
 [project.scripts]
 rosetta = "sssom_rosetta.cli:app"
 
 [build-system]
-requires = ["uv_build>=0.9,<0.12"]
+requires = ["uv_build>=0.11,<0.12"]
 build-backend = "uv_build"
 
 [tool.uv.sources]
-wingman = { git = "https://github.com/plugin-healthcare/wingman" }
+tara-dev = { git = "https://github.com/plugin-healthcare/tara" }
 
 [dependency-groups]
 dev = [
@@ -37,3 +37,70 @@ dev = [
 docs = [
     "zensical>=0.0.50",
 ]
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+fix = true
+exclude = ["examples", "docs", "scripts"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "COM812",  # handled by the formatter
+    "ISC001",  # handled by the formatter
+    "D203",    # incompatible with D211
+    "D213",    # incompatible with D212
+    "E501",    # line length is handled by the formatter
+    "TD002",   # allow TODOs without an author
+    "TD003",   # allow TODOs without an issue link
+    "FIX002",  # allow TODO comments to stay
+    "TRY003",  # allow long messages in raised exceptions
+    "SIM102",  # nested ifs are sometimes clearer
+    "SIM108",  # ternaries are not always clearer
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",     # asserts are expected in tests
+    "S608",     # test SQL is not user input
+    "D100",     # docstrings optional in test modules
+    "D103",     # docstrings optional in test functions
+    "D104",     # docstrings optional in test packages
+    "ANN",      # type hints optional in tests
+    "INP001",   # tests are not an importable package
+    "PLR2004",  # magic values are fine in test assertions
+    "PLR0913",  # fixtures push argument counts up
+    "SLF001",   # tests may touch private members
+    "ARG001",   # unused fixture arguments are common
+    "PLC0415",  # local imports are fine in tests
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.flake8-type-checking]
+strict = true
+
+[tool.ruff.format]
+quote-style = "double"
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+addopts = ["-ra", "-q", "--strict-config", "--strict-markers", "--import-mode=importlib"]
+xfail_strict = true
+filterwarnings = ["error"]
+testpaths = ["tests"]
+
+[tool.ty.rules]
+unused-ignore-comment = "warn"
+invalid-return-type = "error"
+invalid-argument-type = "error"
+division-by-zero = "error"
+redundant-cast = "warn"
+invalid-method-override = "warn"
+
+[tool.uv]
+exclude-newer = "14 days"

@@ -12,7 +12,7 @@ shape the system, not routine implementation details. The format follows MADR
 
 ## Write an ADR
 
-Scaffold it: `wingman new adr "<title>"` (writes a numbered file under
+Scaffold it: `tara new adr "<title>"` (writes a numbered file under
 `docs/decisions/`, e.g. `0007-use-postgres-over-mongodb.md`). Then fill:
 
 - **Metadata**: status, date, and authors.
@@ -38,7 +38,7 @@ old one superseded. This keeps the decision history intact.
 ## Spikes feed decisions
 
 When a decision needs research first, run a timeboxed spike:
-`wingman new spike "<title>"`. State the question, the timebox, and the
+`tara new spike "<title>"`. State the question, the timebox, and the
 expected output. The spike's recommendation becomes the input to an ADR; do not
 skip straight to a decision without recording what was learned.
 

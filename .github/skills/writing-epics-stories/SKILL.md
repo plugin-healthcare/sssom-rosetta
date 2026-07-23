@@ -11,11 +11,11 @@ are the deliverable increments, tasks are the technical steps. Keep epics about
 
 ## Flow
 
-1. **Epic** first. Scaffold it: `wingman new epic "<title>"` (writes
+1. **Epic** first. Scaffold it: `tara new epic "<title>"` (writes
    `docs/epics/<slug>.md`). Fill the goal, background, in/out of scope, success
    metrics, dependencies, and open questions. An epic is a functional description
    that produces a deliverable increment and a sprint goal, not a technical plan.
-2. **Stories** next. For each unit of user value: `wingman new story "<title>"`
+2. **Stories** next. For each unit of user value: `tara new story "<title>"`
    (writes `docs/stories/<slug>.md`). Link it back to the epic.
 3. **Refine** stories into tasks. Add the technical steps, requirements, and a
    Definition of Done. Split a story if it is too big to finish in one increment.

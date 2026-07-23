@@ -1,6 +1,6 @@
 ---
 name: securing-github-actions
-description: "Use when writing, reviewing, or hardening GitHub Actions workflows and CI/CD: setting least-privilege permissions, pinning actions, avoiding script injection and pull_request_target pitfalls, handling secrets and GITHUB_TOKEN safely, and wiring the wingman check gate into CI."
+description: "Use when writing, reviewing, or hardening GitHub Actions workflows and CI/CD: setting least-privilege permissions, pinning actions, avoiding script injection and pull_request_target pitfalls, handling secrets and GITHUB_TOKEN safely, and wiring the tara check gate into CI."
 ---
 
 # Securing GitHub Actions
@@ -11,10 +11,10 @@ pinned, and injection-proof by default.
 
 ## Start from the standard CI template
 
-Scaffold a secure gate workflow that mirrors `wingman check`:
+Scaffold a secure gate workflow that mirrors `tara check`:
 
 ```
-wingman new ci
+tara new ci
 ```
 
 It writes `.github/workflows/ci.yml` with the conventions below already applied.
@@ -43,7 +43,7 @@ It writes `.github/workflows/ci.yml` with the conventions below already applied.
 ## Check it
 
 `actionlint` (correctness) and `zizmor` (security) run automatically via the
-wingman pre-commit standard whenever a workflow or action file changes. Run zizmor
+tara pre-commit standard whenever a workflow or action file changes. Run zizmor
 directly for a one-off audit:
 
 ```

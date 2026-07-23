@@ -21,7 +21,6 @@ Exit codes:
 
 On non-zero exit, a human-readable "ERROR:" block is printed on stderr.
 """
-
 from __future__ import annotations
 
 import argparse
