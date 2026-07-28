@@ -159,6 +159,29 @@ its native input.
 - **Operationally a service.** QLever runs as a server/process (still single
   node), so slightly more to operate than an embedded file.
 
+**Update (benchmarked, see `.agents/plan/2026-07-28-jelly-maplib-
+serialization-and-sparql.md`): maplib as an embedded-SPARQL alternative for
+the "no extra process" case.** [maplib](https://pypi.org/project/maplib/)
+(Rust/Apache-Arrow, `pip install maplib`) loads our Turtle graphs and runs
+SPARQL in-process, no server. Measured on the real, full-scale
+`build/vocabularies/omop.ttl` (19,843,930 triples): bulk load in 78.4s vs.
+rdflib's 360.4s (**4.6×**); `SELECT (COUNT(*))` in 0.69s vs. rdflib's 138.9s
+(**≈201×**); a `skos:Concept` count query in 0.09s vs. rdflib's 17.3s
+(**≈193×**). This is an embedded, `uv`-installable Python library — not a
+server — so it removes QLever's "operationally a service" con for workloads
+that don't need SPARQL federation (`SERVICE`) or exceed its current
+in-memory ceiling (~100M triples on 32GB RAM, comfortably above our ~20M
+triples). It has no RDF-star support, no built-in full-text index, and no
+disk-backed/persistent mode yet (both are on its 2026 roadmap per the PyPI
+page) — QLever remains the stronger choice if/when this project actually
+needs `SERVICE` federation, an integrated text index, or datasets beyond
+maplib's in-memory ceiling. For now, maplib is the recommended default for
+"run SPARQL over the merged vocabulary graph without standing up a service,"
+with QLever kept as the fallback for those unmet needs. (The same benchmark
+also evaluated Jelly as an on-disk serialization format for this graph and
+found it *larger* and *slower to parse* than Turtle on this project's data —
+Jelly is not adopted; see the plan doc for numbers.)
+
 ### Option C — LadybugDB (labelled property graph / Cypher-style)
 
 Embeddable labelled-property-graph (LPG) database — a single-node, cost-effective

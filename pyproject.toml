@@ -26,10 +26,14 @@ build-backend = "uv_build"
 
 [tool.uv.sources]
 tara-dev = { git = "https://github.com/plugin-healthcare/tara" }
+docling-core = { git = "https://github.com/plugin-healthcare/docling-core", branch = "fix/relax-typer-upper-bound" }
 
 [dependency-groups]
 dev = [
+    "docling>=2.92,<=2.113",
+    "docling-core",
     "linkml>=1.11,<2",
+    "maplib>=0.20.19",
     "pytest>=9.1.1",
     "ruff>=0.15.21",
     "rust-just>=1.56,<2",
