@@ -152,25 +152,19 @@ def _mapping_row(mapping_dict: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def write_ttl(
-    mapping_set: MappingSet, output_path: Path, *, prefix_map: dict[str, str]
-) -> None:
-    """Write an RDF/Turtle graph of the mapping set's triples.
+def mapping_set_to_graph(mapping_set: MappingSet, *, prefix_map: dict[str, str]) -> Graph:
+    """Build the in-memory flat-triple graph of a mapping set (see ``write_ttl``).
 
     Each ``Mapping`` becomes exactly one triple: ``subject_id predicate_id
     object_id``, all three CURIEs expanded to full IRIs via ``prefix_map``
-    (the same convention as ``mapping.author.expand_curie``). This is a
-    deliberate simplification over reifying each mapping's metadata
-    (confidence, justification, author) as RDF too -- see the "RDF/Turtle
-    shape" open item in ``.agents/plan.md`` -- sufficient for the current
-    increment's needs.
+    (the same convention as ``mapping.author.expand_curie``). Extracted from
+    ``write_ttl`` so callers that need the graph in memory -- e.g.
+    ``mapping.gephi.build_combined_ontology_graph``, which needs the SKOS
+    mapping predicates as literal triples (not OWL restriction axioms) to
+    match ``ONTOLOGY_PREDICATES`` -- don't have to write-then-reparse.
 
-    Args:
-        mapping_set: The mapping set to serialize.
-        output_path: Destination ``.ttl`` path (parent directories are
-            created if missing, e.g. ``build/mappings/``).
-        prefix_map: Maps CURIE prefixes (for both subject, predicate, and
-            object) to namespace IRIs.
+    Raises:
+        ValueError: If a mapping is missing ``subject_id``/``object_id``.
     """
     graph = Graph()
     for prefix, namespace in prefix_map.items():
@@ -186,5 +180,29 @@ def write_ttl(
         object_iri = expand_curie(mapping.object_id, prefix_map)
         graph.add((URIRef(subject_iri), URIRef(predicate_iri), URIRef(object_iri)))
 
+    return graph
+
+
+def write_ttl(
+    mapping_set: MappingSet, output_path: Path, *, prefix_map: dict[str, str]
+) -> None:
+    """Write an RDF/Turtle graph of the mapping set's triples.
+
+    This is a deliberate simplification over reifying each mapping's
+    metadata (confidence, justification, author) as RDF too -- see the
+    "RDF/Turtle shape" open item in ``.agents/plan.md`` -- sufficient for
+    the current increment's needs.
+
+    Args:
+        mapping_set: The mapping set to serialize.
+        output_path: Destination ``.ttl`` path (parent directories are
+            created if missing, e.g. ``build/mappings/``).
+        prefix_map: Maps CURIE prefixes (for both subject, predicate, and
+            object) to namespace IRIs.
+
+    Raises:
+        ValueError: If a mapping is missing ``subject_id``/``object_id``.
+    """
+    graph = mapping_set_to_graph(mapping_set, prefix_map=prefix_map)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     graph.serialize(destination=str(output_path), format="turtle")

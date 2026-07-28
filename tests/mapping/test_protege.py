@@ -16,7 +16,7 @@ from linkml_runtime.utils.metamodelcore import URI
 from rdflib import OWL, RDF, RDFS, Graph, URIRef
 
 from sssom_rosetta.mapping.io import read_mapping_set_csvw
-from sssom_rosetta.mapping.protege import write_owl_restrictions
+from sssom_rosetta.mapping.protege import build_combined_graph, write_owl_restrictions
 from sssom_rosetta.models.sssom import MappingSet
 
 MAPPING_SET_ID = "https://example.org/mappings/omop-onz-g"
@@ -149,3 +149,46 @@ def test_write_owl_restrictions_requires_subject_and_object_id(
 
     with pytest.raises(ValueError, match="missing subject_id/object_id"):
         write_owl_restrictions(incomplete_set, output_path, prefix_map=PREFIX_MAP)
+
+
+# --- build_combined_graph (shared by protege_build and gephi build-ontology) ------
+
+
+def test_build_combined_graph_merges_ontologies_and_mapping_axioms(
+    mapping_set: MappingSet,
+) -> None:
+    subject_graph = Graph()
+    subject_graph.parse(
+        data="""
+        @prefix owl: <http://www.w3.org/2002/07/owl#> .
+        @prefix omop: <https://w3id.org/omop/ontology#> .
+        omop:Person a owl:Class .
+        omop:Provider a owl:Class .
+        """,
+        format="turtle",
+    )
+    object_graph = Graph()
+    object_graph.parse(
+        data="""
+        @prefix owl: <http://www.w3.org/2002/07/owl#> .
+        @prefix onz-g: <http://purl.org/ozo/onz-g#> .
+        onz-g:Client a owl:Class .
+        onz-g:Caregiver a owl:Class .
+        """,
+        format="turtle",
+    )
+
+    combined = build_combined_graph(mapping_set, PREFIX_MAP, subject_graph, object_graph)
+
+    person = URIRef("https://w3id.org/omop/ontology#Person")
+    client = URIRef("http://purl.org/ozo/onz-g#Client")
+    provider = URIRef("https://w3id.org/omop/ontology#Provider")
+
+    # Ontology triples are present...
+    assert (person, RDF.type, OWL.Class) in combined
+    assert (client, RDF.type, OWL.Class) in combined
+    # ...alongside the mapping's OWL restriction axioms.
+    assert (person, OWL.equivalentClass, client) in combined
+    assert len(list(combined.subjects(RDF.type, OWL.Restriction))) == 1
+    assert (provider, RDFS.subClassOf, None) in combined
+

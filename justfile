@@ -51,6 +51,17 @@ protege:
         --license "{{ mapping_license }}" \
         --curie-map '{{ curie_map }}'
 
+# Build the combined ontology Gephi export (build/gephi/omop-onz-g.gexf).
+gephi-ontology:
+    uv run rosetta gephi build-ontology {{ mapping_csv }} {{ mapping_metadata }} \
+        --mapping-set-id "{{ mapping_set_id }}" \
+        --license "{{ mapping_license }}" \
+        --curie-map '{{ curie_map }}'
+
+# Build the combined vocabulary Gephi export (build/gephi/rosetta-vocabularies.gexf).
+gephi-vocabulary:
+    uv run rosetta gephi build-vocabulary
+
 # Render the Markdown+HTML mapping report from the generated TSV.
 report:
     uv run rosetta mapping report \
@@ -129,7 +140,7 @@ check: lint typecheck test
 
 # Full local pipeline: fetch ontologies, validate + build + report the
 # mapping set, build the Protege export, regenerate docs, and build the site.
-build-all: fetch validate build report protege docs-build
+build-all: fetch validate build report protege gephi-ontology docs-build
 
 # Remove all generated build artifacts (build/, site/).
 clean:

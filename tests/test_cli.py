@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import networkx as nx
 import pytest
 from rdflib import Graph
 from typer.testing import CliRunner
@@ -501,4 +502,124 @@ def test_protege_build_fails_before_writing_when_invalid(
         ],
     )
     assert result.exit_code != 0
+    assert not output_path.exists()
+
+
+# --- gephi build-ontology / build-vocabulary --------------------------------
+
+VOCABULARY_TTL = """
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix sct: <http://snomed.info/id/> .
+@prefix omopconcept: <https://w3id.org/omop/concept/> .
+
+sct:73211009 a skos:Concept ;
+    skos:prefLabel "Diabetes mellitus"@en .
+
+omopconcept:201820 a skos:Concept ;
+    skos:prefLabel "Diabetes mellitus"@en ;
+    skos:exactMatch sct:73211009 .
+"""
+
+
+def test_gephi_build_ontology_writes_gexf(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_load_ontology(monkeypatch)
+    csv_path, metadata_path = _write_csvw_pair(tmp_path, CSV_CONTENT)
+    output_path = tmp_path / "build" / "gephi" / "omop-onz-g.gexf"
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "gephi",
+            "build-ontology",
+            str(csv_path),
+            str(metadata_path),
+            "--mapping-set-id",
+            MAPPING_SET_ID,
+            "--license",
+            LICENSE,
+            "--curie-map",
+            json.dumps(PREFIX_MAP),
+            "--output-path",
+            str(output_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert output_path.exists()
+    assert str(output_path) in result.output
+
+    graph = nx.read_gexf(output_path)
+    assert graph.number_of_nodes() > 0
+
+
+def test_gephi_build_ontology_fails_before_writing_when_invalid(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_load_ontology(monkeypatch)
+    csv_path, metadata_path = _write_csvw_pair(tmp_path, CSV_CONTENT_BAD)
+    output_path = tmp_path / "build" / "gephi" / "omop-onz-g.gexf"
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "gephi",
+            "build-ontology",
+            str(csv_path),
+            str(metadata_path),
+            "--mapping-set-id",
+            MAPPING_SET_ID,
+            "--license",
+            LICENSE,
+            "--curie-map",
+            json.dumps(PREFIX_MAP),
+            "--output-path",
+            str(output_path),
+        ],
+    )
+    assert result.exit_code != 0
+    assert not output_path.exists()
+
+
+def test_gephi_build_vocabulary_writes_gexf(tmp_path: Path) -> None:
+    input_path = tmp_path / "rosetta-vocabularies.ttl"
+    input_path.write_text(VOCABULARY_TTL)
+    output_path = tmp_path / "build" / "gephi" / "rosetta-vocabularies.gexf"
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "gephi",
+            "build-vocabulary",
+            "--input-path",
+            str(input_path),
+            "--output-path",
+            str(output_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert output_path.exists()
+    assert str(output_path) in result.output
+
+    graph = nx.read_gexf(output_path)
+    assert graph.number_of_nodes() == 2
+
+
+def test_gephi_build_vocabulary_fails_when_input_missing(tmp_path: Path) -> None:
+    input_path = tmp_path / "rosetta-vocabularies.ttl"
+    output_path = tmp_path / "build" / "gephi" / "rosetta-vocabularies.gexf"
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "gephi",
+            "build-vocabulary",
+            "--input-path",
+            str(input_path),
+            "--output-path",
+            str(output_path),
+        ],
+    )
+    assert result.exit_code != 0
+    assert "vocabulary merge" in result.output
     assert not output_path.exists()

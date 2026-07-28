@@ -43,17 +43,11 @@ def _is_exact_match(predicate_iri: str) -> bool:
     return predicate_iri.endswith(_EXACT_MATCH_SUFFIXES)
 
 
-def write_owl_restrictions(
-    mapping_set: MappingSet, output_path: Path, *, prefix_map: dict[str, str]
-) -> None:
-    """Write an OWL graph of the mapping set using class-level axioms.
+def _build_restriction_graph(mapping_set: MappingSet, *, prefix_map: dict[str, str]) -> Graph:
+    """Build the OWL-restriction graph in memory (see ``write_owl_restrictions``).
 
-    Args:
-        mapping_set: The mapping set to serialize.
-        output_path: Destination ``.ttl`` path (parent directories are
-            created if missing, e.g. ``build/protege/``).
-        prefix_map: Maps CURIE prefixes (for subject, predicate, and object)
-            to namespace IRIs, same convention as ``mapping.io.write_ttl``.
+    Extracted so :func:`build_combined_graph` can reuse it without writing
+    to and re-parsing from disk.
 
     Raises:
         ValueError: If a mapping is missing ``subject_id``/``object_id``.
@@ -90,5 +84,57 @@ def write_owl_restrictions(
         graph.add((restriction, OWL.someValuesFrom, object_node))
         graph.add((subject_node, RDFS.subClassOf, restriction))
 
+    return graph
+
+
+def write_owl_restrictions(
+    mapping_set: MappingSet, output_path: Path, *, prefix_map: dict[str, str]
+) -> None:
+    """Write an OWL graph of the mapping set using class-level axioms.
+
+    Args:
+        mapping_set: The mapping set to serialize.
+        output_path: Destination ``.ttl`` path (parent directories are
+            created if missing, e.g. ``build/protege/``).
+        prefix_map: Maps CURIE prefixes (for subject, predicate, and object)
+            to namespace IRIs, same convention as ``mapping.io.write_ttl``.
+
+    Raises:
+        ValueError: If a mapping is missing ``subject_id``/``object_id``.
+    """
+    graph = _build_restriction_graph(mapping_set, prefix_map=prefix_map)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     graph.serialize(destination=str(output_path), format="turtle")
+
+
+def build_combined_graph(
+    mapping_set: MappingSet,
+    prefix_map: dict[str, str],
+    subject_graph: Graph,
+    object_graph: Graph,
+) -> Graph:
+    """Merge both ontology graphs with the mapping set's OWL restriction axioms.
+
+    Shared by ``rosetta protege build`` (serializes the result to Turtle)
+    and ``rosetta gephi build-ontology`` (converts the result to GEXF) --
+    both need the identical combined graph.
+
+    Args:
+        mapping_set: The mapping set to emit as restriction axioms.
+        prefix_map: CURIE prefix -> namespace IRI, same convention as
+            ``write_owl_restrictions``.
+        subject_graph: The subject ontology's graph (e.g. OMOP CDM).
+        object_graph: The object ontology's graph (e.g. ONZ-G).
+
+    Raises:
+        ValueError: If a mapping is missing ``subject_id``/``object_id``.
+    """
+    combined = Graph()
+    for prefix, namespace in prefix_map.items():
+        combined.bind(prefix, namespace)
+    for source_graph in (subject_graph, object_graph):
+        for triple in source_graph:
+            combined.add(triple)
+    for triple in _build_restriction_graph(mapping_set, prefix_map=prefix_map):
+        combined.add(triple)
+    return combined

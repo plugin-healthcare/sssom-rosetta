@@ -116,6 +116,10 @@ just build
 # Run the whole local pipeline (fetch → validate → build → report → docs)
 just build-all
 
+# Export the combined ontology/vocabulary graphs for Gephi (build/gephi/)
+just gephi-ontology
+just gephi-vocabulary
+
 # Lint + type-check + tests
 just check
 ```
@@ -223,12 +227,50 @@ single Turtle file for exploration in [Protégé](https://protege.stanford.edu),
 emitting each mapping as an OWL class-level axiom (so OntoGraf and the reasoner
 render the mapping edges). See `docs/` for the full Protégé setup.
 
+### Exploring the graphs in Gephi
+
+Two distinct combined graphs can be exported as `.gexf` for
+[Gephi](https://gephi.org) (force-directed layouts, degree/partition colouring,
+community detection):
+
+- `just gephi-ontology` → `build/gephi/omop-onz-g.gexf` — OMOP CDM + ONZ-G plus
+  the authored `mappings/*.csv` mapping set.
+- `just gephi-vocabulary` → `build/gephi/rosetta-vocabularies.gexf` — the merged
+  source-vocabulary graph from `rosetta vocabulary merge` (grows as more
+  vocabularies, e.g. Z-Index/DHD, are integrated per the Roadmap).
+
+They're kept as two separate exports rather than one merged file: the ontology
+graph (the OMOP CDM data model) and the vocabulary graph (source terminologies)
+are different subject domains with unrelated identifier spaces, and mixing them
+would bury each graph's structure in the other's noise.
+
+Conversion pipeline (`mapping/gephi.py`): `rdflib.Graph` → filtered to a small
+set of structural/mapping predicates for edges (`rdfs:subClassOf` + all SKOS
+mapping predicates for the ontology graph; SKOS mapping predicates only for the
+vocabulary graph) → `rdflib_to_networkx_multidigraph` → `networkx.write_gexf`.
+This mirrors the *approach* of
+[rdf2gephi](https://github.com/sparna-git/rdf2gephi) (which predicates matter
+for edges vs. attributes) without taking on its JVM dependency — both
+`rdflib` and `networkx` are pure Python.
+
+Every node carries its **full literal metadata as GEXF attributes**, not just a
+label: every `skos:*`/`rdfs:*` literal property present on a concept
+(`prefLabel`, `altLabel`, `notation`, `definition`, `comment`, etc.) is exposed
+as its own attribute, plus `type` and `source`, so curators can inspect a
+node's underlying data directly in Gephi's Data Laboratory / node inspector,
+not just its position in the graph.
+
+To explore a `.gexf` file: open it in Gephi (File > Open), then try a Force
+Atlas 2 layout, Appearance > Nodes > Partition on the `source` or `type`
+attribute, Data Laboratory to browse per-node attributes, and Statistics >
+Modularity for clustering.
+
 ### Key dependencies
 
 `rdflib` (graph loading/SPARQL), `csvw` (CSVW parsing + `csv2rdf`), `linkml`
 (`gen-pydantic`), `sssom` / `sssom-schema` (SSSOM I/O + schema), `pydantic`
 (runtime validation), `typer` (the `rosetta` CLI), `polars` (tabular + RF2/Athena
-parsing), `zensical` (docs site).
+parsing), `networkx` (RDF→GEXF export for Gephi), `zensical` (docs site).
 
 ### Testing
 

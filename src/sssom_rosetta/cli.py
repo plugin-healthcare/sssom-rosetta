@@ -23,11 +23,15 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from rdflib import Graph
 
 from sssom_rosetta.mapping.docs_pages import generate_mapping_pages
+from sssom_rosetta.mapping.gephi import (
+    build_combined_ontology_graph,
+    build_ontology_graph,
+    build_vocabulary_graph,
+)
 from sssom_rosetta.mapping.io import read_mapping_set_csvw, write_sssom_tsv, write_ttl
-from sssom_rosetta.mapping.protege import write_owl_restrictions
+from sssom_rosetta.mapping.protege import build_combined_graph
 from sssom_rosetta.mapping.report import (
     diff_mapping_sets,
     load_mapping_set_tsv,
@@ -51,6 +55,8 @@ from sssom_rosetta.ontology.sources import (
 from sssom_rosetta.vocabulary import loinc_snomed, merge, omop, snomed_international
 from sssom_rosetta.vocabulary.fetch import (
     DEFAULT_CACHE_DIR as VOCAB_CACHE_DIR,
+)
+from sssom_rosetta.vocabulary.fetch import (
     VocabularyChecksumMismatchError,
     VocabularyIngestError,
     cache_dir_for,
@@ -76,11 +82,16 @@ vocabulary_app = typer.Typer(
     help="Ingest large terminology releases (LOINC-SNOMED RF2, OMOP/Athena) and "
     "build a merged vocabulary Turtle graph."
 )
+gephi_app = typer.Typer(
+    help="Export the combined ontology or vocabulary graph as GEXF for Gephi."
+)
 app.add_typer(ontology_app, name="ontology")
 app.add_typer(mapping_app, name="mapping")
 app.add_typer(docs_app, name="docs")
 app.add_typer(protege_app, name="protege")
 app.add_typer(vocabulary_app, name="vocabulary")
+app.add_typer(gephi_app, name="gephi")
+
 
 # The two ontology sources every mapping set is validated against. The CLI
 # currently only supports the first ontology pair described in AGENTS.md
@@ -467,23 +478,112 @@ def protege_build(
     subject_graph = load_ontology(subject_ontology, cache_dir)
     object_graph = load_ontology(object_ontology, cache_dir)
 
-    combined = Graph()
-    for prefix, namespace in curie_map_dict.items():
-        combined.bind(prefix, namespace)
-    for graph in (subject_graph, object_graph):
-        for triple in graph:
-            combined.add(triple)
-
+    combined = build_combined_graph(mapping_set, curie_map_dict, subject_graph, object_graph)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    write_owl_restrictions(mapping_set, output_path, prefix_map=curie_map_dict)
-
-    mapping_graph = Graph()
-    mapping_graph.parse(str(output_path), format="turtle")
-    for triple in mapping_graph:
-        combined.add(triple)
-
     combined.serialize(destination=str(output_path), format="turtle")
     typer.echo(str(output_path))
+
+
+@gephi_app.command("build-ontology")
+def gephi_build_ontology(
+    csv_path: Annotated[Path, typer.Argument(help="Authored mapping CSV.")],
+    metadata_path: Annotated[Path, typer.Argument(help="Paired CSVW metadata JSON.")],
+    mapping_set_id: Annotated[
+        str, typer.Option(help="MappingSet.mapping_set_id (not row data).")
+    ],
+    license: Annotated[  # noqa: A002 - matches the SSSOM field name
+        str, typer.Option(help="MappingSet.license (not row data).")
+    ],
+    curie_map: Annotated[
+        str,
+        typer.Option(
+            "--curie-map",
+            help=(
+                "MappingSet.curie_map as a JSON object string. See "
+                "'rosetta mapping validate --help' for details."
+            ),
+        ),
+    ],
+    output_path: Annotated[
+        Path,
+        typer.Option(help="GEXF file path written for Gephi to open."),
+    ] = Path("build/gephi/omop-onz-g.gexf"),
+    subject_source: Annotated[
+        str,
+        typer.Option(help="Ontology source name subject_id CURIEs resolve against."),
+    ] = _DEFAULT_SUBJECT_SOURCE,
+    object_source: Annotated[
+        str,
+        typer.Option(help="Ontology source name object_id CURIEs resolve against."),
+    ] = _DEFAULT_OBJECT_SOURCE,
+    cache_dir: Annotated[
+        Path,
+        typer.Option(help="Base directory ontologies are cached under."),
+    ] = DEFAULT_CACHE_DIR,
+) -> None:
+    """Export the combined ontology graph (OMOP CDM + ONZ-G + mappings) as GEXF.
+
+    Merges the same OMOP CDM + ONZ-G ontology graphs as ``rosetta protege
+    build``, but keeps each mapping as a flat SKOS triple rather than an OWL
+    restriction axiom (``mapping.gephi.build_combined_ontology_graph``) so
+    ``ONTOLOGY_PREDICATES`` matches mapping edges directly, then converts to
+    GEXF via ``mapping.gephi.build_ontology_graph`` (``rdflib`` ->
+    ``networkx`` -> GEXF; see ``README.md``'s "Exploring the graphs in
+    Gephi" section).
+    """
+    mapping_set, curie_map_dict = _read_and_validate_csvw(
+        csv_path,
+        metadata_path,
+        mapping_set_id=mapping_set_id,
+        license=license,
+        curie_map=curie_map,
+        subject_source=subject_source,
+        object_source=object_source,
+        cache_dir=cache_dir,
+    )
+
+    subject_ontology = get_source(subject_source)
+    object_ontology = get_source(object_source)
+    subject_graph = load_ontology(subject_ontology, cache_dir)
+    object_graph = load_ontology(object_ontology, cache_dir)
+
+    combined = build_combined_ontology_graph(
+        mapping_set, curie_map_dict, subject_graph, object_graph
+    )
+    build_ontology_graph(combined, output_path)
+    typer.echo(str(output_path))
+
+
+@gephi_app.command("build-vocabulary")
+def gephi_build_vocabulary(
+    input_path: Annotated[
+        Path,
+        typer.Option(
+            help="Merged vocabulary Turtle file (see 'rosetta vocabulary merge')."
+        ),
+    ] = Path("build/vocabularies/rosetta-vocabularies.ttl"),
+    output_path: Annotated[
+        Path,
+        typer.Option(help="GEXF file path written for Gephi to open."),
+    ] = Path("build/gephi/rosetta-vocabularies.gexf"),
+) -> None:
+    """Export the merged vocabulary graph (``rosetta vocabulary merge``'s output) as GEXF.
+
+    Unlike ``build-ontology``, no CSVW mapping set or ontology cache is
+    involved -- ``input_path`` is already the fully-merged vocabulary
+    graph.
+    """
+    if not input_path.is_file():
+        typer.echo(
+            f"Error: no merged vocabulary graph at {input_path}. Run "
+            "'rosetta vocabulary merge' first.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    build_vocabulary_graph(input_path, output_path)
+    typer.echo(str(output_path))
+
 
 
 DEFAULT_VOCAB_OUTPUT_DIR = Path("build/vocabularies")
@@ -639,7 +739,7 @@ def vocabulary_merge(
     typer.echo(str(output_path))
 
 
-__all__ = ["app", "ONTOLOGY_SOURCES"]
+__all__ = ["ONTOLOGY_SOURCES", "app"]
 
 
 if __name__ == "__main__":
