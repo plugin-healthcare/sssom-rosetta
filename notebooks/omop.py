@@ -6,7 +6,6 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
-    import marimo as mo
     import polars as pl
 
     return (pl,)
@@ -27,13 +26,11 @@ def _(concept_rel, pl):
         .sort(descending=True, by=pl.col("len"))
         .collect()
     )
-    return
 
 
 @app.cell
 def _(concept_rel, pl):
     concept_rel.filter(pl.col("relationship_id").str.contains("ATC - RxNorm")).collect()
-    return
 
 
 @app.cell

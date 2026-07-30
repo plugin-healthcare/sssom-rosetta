@@ -9,15 +9,17 @@ ontology graphs is exercised manually / in CI via ``rosetta mapping validate``
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sssom_rosetta.mapping.io import read_mapping_set_csvw
-from sssom_rosetta.models.sssom import MappingSet
+
+if TYPE_CHECKING:
+    from sssom_rosetta.models.sssom import MappingSet
 
 MAPPINGS_DIR = Path(__file__).resolve().parents[2] / "mappings"
 
 MAPPING_SET_ID = (
-    "https://raw.githubusercontent.com/plugin-healthcare/sssom-rosetta/"
-    "main/build/mappings/omop-onz-g.sssom.tsv"
+    "https://raw.githubusercontent.com/plugin-healthcare/sssom-rosetta/main/build/mappings/omop-onz-g.sssom.tsv"
 )
 LICENSE = "https://creativecommons.org/publicdomain/zero/1.0/"
 

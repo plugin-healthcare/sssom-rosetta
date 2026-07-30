@@ -22,12 +22,15 @@ Full OWL-DL logical definitions are intentionally not materialised here — see
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from rdflib import Graph
+from typing import TYPE_CHECKING
 
 from sssom_rosetta.vocabulary import loinc_snomed, rf2
 from sssom_rosetta.vocabulary.fetch import find_file
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from rdflib import Graph
 
 _SNAPSHOT = "/Snapshot/"
 

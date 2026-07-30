@@ -10,32 +10,31 @@ the mapping, the ``rdflib.Graph`` the CURIE should resolve against (see
 
 from __future__ import annotations
 
-from typing import Any
-
-from rdflib import Graph
+from typing import TYPE_CHECKING, Any
 
 from sssom_rosetta.models.sssom import Mapping
 from sssom_rosetta.ontology.catalog import resource_exists
+
+if TYPE_CHECKING:
+    from rdflib import Graph
 
 
 class UnknownPrefixError(KeyError):
     """Raised when a CURIE's prefix isn't in the supplied prefix map."""
 
     def __init__(self, curie: str, prefix_map: dict[str, str]) -> None:
+        """Build the error message from the unresolvable ``curie`` and known ``prefix_map``."""
         prefix = curie.split(":", 1)[0]
         known = ", ".join(sorted(prefix_map)) or "(none)"
-        super().__init__(
-            f"Unknown CURIE prefix {prefix!r} in {curie!r}. Known prefixes: {known}"
-        )
+        super().__init__(f"Unknown CURIE prefix {prefix!r} in {curie!r}. Known prefixes: {known}")
 
 
 class UnresolvableCurieError(ValueError):
     """Raised when a CURIE expands to an IRI that doesn't exist in its ontology graph."""
 
     def __init__(self, curie: str, iri: str) -> None:
-        super().__init__(
-            f"CURIE {curie!r} (expands to {iri!r}) was not found in the ontology graph"
-        )
+        """Build the error message from the unresolved ``curie`` and its expanded ``iri``."""
+        super().__init__(f"CURIE {curie!r} (expands to {iri!r}) was not found in the ontology graph")
 
 
 def expand_curie(curie: str, prefix_map: dict[str, str]) -> str:
@@ -55,7 +54,8 @@ def expand_curie(curie: str, prefix_map: dict[str, str]) -> str:
         ValueError: If ``curie`` doesn't contain a ``:`` separator.
     """
     if ":" not in curie:
-        raise ValueError(f"Not a CURIE (missing ':'): {curie!r}")
+        msg = f"Not a CURIE (missing ':'): {curie!r}"
+        raise ValueError(msg)
     prefix, local_name = curie.split(":", 1)
     try:
         namespace = prefix_map[prefix]
@@ -80,7 +80,7 @@ def resolve_curie(curie: str, prefix_map: dict[str, str], graph: Graph) -> str:
     return iri
 
 
-def build_mapping(
+def build_mapping(  # noqa: PLR0913 - all keyword-only, one CLI/API option per SSSOM field
     *,
     subject_curie: str,
     predicate: str,
@@ -91,7 +91,7 @@ def build_mapping(
     mapping_justification: str,
     author_id: list[str] | None = None,
     confidence: float | None = None,
-    **extra_fields: Any,
+    **extra_fields: Any,  # noqa: ANN401 - forwards arbitrary optional SSSOM Mapping fields
 ) -> Mapping:
     """Build a validated SSSOM ``Mapping`` from CURIEs, resolved against ontology graphs.
 

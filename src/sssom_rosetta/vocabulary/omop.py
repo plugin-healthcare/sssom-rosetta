@@ -1,4 +1,4 @@
-"""Build a SKOS Turtle graph from an OHDSI/OMOP Athena vocabulary bundle.
+r"""Build a SKOS Turtle graph from an OHDSI/OMOP Athena vocabulary bundle.
 
 Athena files are tab-delimited despite their ``.csv`` extension, so they are
 read with the same polars settings as RF2 (``separator="\\t",
@@ -18,36 +18,62 @@ Relationships (current rows only) map to SKOS:
 * ``Maps to`` → ``skos:exactMatch`` (source → standard concept),
 * ``Is a`` → ``skos:broadMatch`` (child → parent),
 * ``Subsumes`` → ``skos:narrowMatch``.
+
+The graph is assembled with **maplib**, not rdflib: concept nodes are built
+by mapping the filtered ``concepts`` DataFrame through the
+:data:`~sssom_rosetta.vocabulary.templates.CONCEPT_TEMPLATE` OTTR template,
+and relationship edges are built with ``Model.map_triples`` over a
+subject/predicate/object frame (the ``relationship_id`` -> SKOS predicate
+lookup is a plain column mapping, not a template, since it doesn't need
+OTTR's optional-value semantics). See
+``.agents/plan/2026-07-30-implementation-maplib.md``.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import polars as pl
-from rdflib import Graph, Literal
-from rdflib.namespace import RDF, SKOS
+from maplib import Model
 
 from sssom_rosetta.vocabulary.fetch import find_file
 from sssom_rosetta.vocabulary.namespaces import (
+    OMOP_CONCEPT,
     PREFIX_MAP,
     TARGET_VOCABULARIES,
-    omop_iri,
     source_concept_iri,
 )
+from sssom_rosetta.vocabulary.templates import (
+    CONCEPT_TEMPLATE,
+    CONCEPT_TEMPLATE_IRI,
+    language_tagged_column,
+)
 
-#: OMOP relationship_id -> SKOS predicate. Others are ignored for this graph.
+if TYPE_CHECKING:
+    from pathlib import Path
+
+_SKOS = "http://www.w3.org/2004/02/skos/core#"
+
+#: OMOP relationship_id -> SKOS predicate IRI. Others are ignored for this graph.
 _RELATIONSHIP_PREDICATES = {
-    "Maps to": SKOS.exactMatch,
-    "Is a": SKOS.broadMatch,
-    "Subsumes": SKOS.narrowMatch,
+    "Maps to": f"{_SKOS}exactMatch",
+    "Is a": f"{_SKOS}broadMatch",
+    "Subsumes": f"{_SKOS}narrowMatch",
 }
 
+#: Prefixes bound on the produced model, purely for readable Turtle output.
+_PREFIXES = {prefix: str(namespace) for prefix, namespace in PREFIX_MAP.items()} | {"skos": _SKOS}
 
-def _bind_prefixes(graph: Graph) -> None:
-    for prefix, namespace in PREFIX_MAP.items():
-        graph.bind(prefix, namespace)
-    graph.bind("skos", SKOS)
+
+def _omop_iri_column(concept_id_column: str) -> pl.Expr:
+    """Vectorised ``omopconcept:<id>`` IRI expression for a concept-id column.
+
+    OMOP ``concept_id`` values are plain digit strings, so (unlike
+    :func:`~sssom_rosetta.vocabulary.namespaces.source_concept_iri`) no
+    percent-encoding is needed and this can be a fast Polars string
+    concatenation instead of a per-row Python call.
+    """
+    return pl.concat_str([pl.lit(str(OMOP_CONCEPT)), pl.col(concept_id_column)])
 
 
 def _scan_athena(path: Path) -> pl.LazyFrame:
@@ -91,38 +117,66 @@ def load_relationships(relationship_csv: Path, concept_ids: pl.Series) -> pl.Dat
     )
 
 
-def build_graph(concepts: pl.DataFrame, relationships: pl.DataFrame) -> Graph:
-    """Assemble the OMOP SKOS graph from filtered concept/relationship frames."""
-    graph = Graph()
-    _bind_prefixes(graph)
+def _concept_rows(concepts: pl.DataFrame) -> pl.DataFrame:
+    """Prepare the concept frame for :data:`CONCEPT_TEMPLATE`.
 
-    for row in concepts.iter_rows(named=True):
-        subject = omop_iri(row["concept_id"])
-        graph.add((subject, RDF.type, SKOS.Concept))
-        if row["concept_name"]:
-            graph.add(
-                (subject, SKOS.prefLabel, Literal(row["concept_name"], lang="en"))
-            )
-        if row["concept_code"]:
-            graph.add((subject, SKOS.notation, Literal(row["concept_code"])))
-        source = source_concept_iri(row["vocabulary_id"], row["concept_code"])
-        if source is not None:
-            graph.add((subject, SKOS.exactMatch, source))
+    Blank-vs-null handling mirrors the previous rdflib implementation's
+    ``if row["concept_name"]:`` / ``if row["concept_code"]:`` guards: empty
+    strings are nulled out here so the OTTR template's optional parameters
+    drop the corresponding triple, rather than emitting e.g.
+    ``skos:notation ""``.
+    """
 
-    for row in relationships.iter_rows(named=True):
-        predicate = _RELATIONSHIP_PREDICATES[row["relationship_id"]]
-        graph.add(
-            (
-                omop_iri(row["concept_id_1"]),
-                predicate,
-                omop_iri(row["concept_id_2"]),
-            )
-        )
+    def non_blank(column: str) -> pl.Expr:
+        return pl.when(pl.col(column).is_not_null() & (pl.col(column) != "")).then(pl.col(column)).otherwise(None)
 
-    return graph
+    concept_name = concepts.select(non_blank("concept_name")).to_series()
+    rows = concepts.with_columns(
+        subject=_omop_iri_column("concept_id"),
+        label=language_tagged_column(concept_name),
+        code=non_blank("concept_code"),
+    )
+    # source_concept_iri needs per-row vocabulary lookup + percent-encoding
+    # (see namespaces.py), which isn't a plain column expression, so this one
+    # column stays a Python-level pass rather than a Polars expression.
+    source_iris = [
+        str(iri) if (iri := source_concept_iri(vocabulary_id, concept_code)) is not None else None
+        for vocabulary_id, concept_code in zip(concepts["vocabulary_id"], concepts["concept_code"], strict=True)
+    ]
+    return rows.with_columns(source=pl.Series(source_iris, dtype=pl.Utf8))
 
 
-def build_from_release(release_dir: Path) -> Graph:
+def _relationship_rows(relationships: pl.DataFrame) -> pl.DataFrame:
+    """Prepare the relationship frame as a plain subject/predicate/object table."""
+    return relationships.with_columns(
+        subject=_omop_iri_column("concept_id_1"),
+        object=_omop_iri_column("concept_id_2"),
+        predicate=pl.col("relationship_id").replace_strict(_RELATIONSHIP_PREDICATES),
+    ).select("subject", "predicate", "object")
+
+
+def build_graph(concepts: pl.DataFrame, relationships: pl.DataFrame) -> Model:
+    """Assemble the OMOP SKOS graph from filtered concept/relationship frames.
+
+    Concept nodes are mapped through the declarative :data:`CONCEPT_TEMPLATE`
+    OTTR template; relationship edges are mapped as plain triples (see the
+    module docstring). Returns a maplib ``Model`` rather than an
+    ``rdflib.Graph``.
+    """
+    model = Model()
+    model.add_prefixes(_PREFIXES)
+    model.add_template(CONCEPT_TEMPLATE)
+
+    concept_rows = _concept_rows(concepts)
+    model.map(CONCEPT_TEMPLATE_IRI, concept_rows.select("subject", "label", "code", "source"))
+
+    if relationships.height:
+        model.map_triples(_relationship_rows(relationships))
+
+    return model
+
+
+def build_from_release(release_dir: Path) -> Model:
     """Locate Athena CSVs under ``release_dir`` and build the OMOP graph."""
     # CONCEPT.csv and CONCEPT_RELATIONSHIP.csv both start with "CONCEPT", so
     # match by exact filename rather than a shared prefix.
@@ -139,8 +193,8 @@ def _exact(root: Path, filename: str) -> Path:
     return find_file(root, prefix=filename, suffix=filename)
 
 
-def write_ttl(graph: Graph, output_path: Path) -> Path:
-    """Serialize ``graph`` to Turtle at ``output_path``, creating parents."""
+def write_ttl(model: Model, output_path: Path) -> Path:
+    """Serialize ``model`` to Turtle at ``output_path``, creating parents."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    graph.serialize(destination=str(output_path), format="turtle")
+    model.write(str(output_path), format="turtle")
     return output_path

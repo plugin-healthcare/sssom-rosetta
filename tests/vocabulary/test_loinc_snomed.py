@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import polars as pl
-from rdflib import Literal, URIRef
+from rdflib import Literal
 from rdflib.namespace import RDF, RDFS, SKOS
 
 from sssom_rosetta.vocabulary import loinc_snomed, rf2
 from sssom_rosetta.vocabulary.namespaces import sct_iri
+
+if TYPE_CHECKING:
+    from rdflib import URIRef
 
 # --- synthetic RF2 frames -------------------------------------------------
 
@@ -87,9 +92,7 @@ def test_preferred_terms_join() -> None:
 
 def test_synonyms() -> None:
     syns = rf2.synonyms(DESCRIPTION)
-    assert syns.to_dicts() == [
-        {"conceptId": "100001", "term": "Glucose test", "lang": "en"}
-    ]
+    assert syns.to_dicts() == [{"conceptId": "100001", "term": "Glucose test", "lang": "en"}]
 
 
 def test_build_graph_emits_expected_triples() -> None:

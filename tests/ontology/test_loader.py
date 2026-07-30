@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
@@ -16,6 +16,9 @@ from sssom_rosetta.ontology.loader import (
     load_ontology,
 )
 from sssom_rosetta.ontology.sources import OntologySource
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 FIXTURE_TTL = b"""\
 @prefix ex: <http://example.org/> .
@@ -127,9 +130,5 @@ def test_load_ontology_returns_populated_graph(tmp_path: Path) -> None:
 
     assert isinstance(graph, Graph)
     assert len(graph) > 0
-    labels = {
-        str(o)
-        for _, _, o in graph.triples((None, None, None))
-        if str(o) in {"Foo", "Bar"}
-    }
+    labels = {str(o) for _, _, o in graph.triples((None, None, None)) if str(o) in {"Foo", "Bar"}}
     assert labels == {"Foo", "Bar"}

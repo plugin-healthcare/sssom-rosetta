@@ -50,10 +50,7 @@ def onz_g_graph() -> Graph:
 
 
 def test_expand_curie() -> None:
-    assert (
-        expand_curie("omop:Person", PREFIX_MAP)
-        == "https://w3id.org/omop/ontology#Person"
-    )
+    assert expand_curie("omop:Person", PREFIX_MAP) == "https://w3id.org/omop/ontology#Person"
 
 
 def test_expand_curie_unknown_prefix_raises() -> None:
@@ -76,9 +73,7 @@ def test_resolve_curie_unresolvable_raises(omop_graph: Graph) -> None:
         resolve_curie("omop:DoesNotExist", PREFIX_MAP, omop_graph)
 
 
-def test_build_mapping_accepts_valid_curie_pair(
-    omop_graph: Graph, onz_g_graph: Graph
-) -> None:
+def test_build_mapping_accepts_valid_curie_pair(omop_graph: Graph, onz_g_graph: Graph) -> None:
     mapping = build_mapping(
         subject_curie="omop:Person",
         predicate="skos:exactMatch",
@@ -98,9 +93,7 @@ def test_build_mapping_accepts_valid_curie_pair(
     assert mapping.confidence == 0.9
 
 
-def test_build_mapping_rejects_unknown_subject_iri(
-    omop_graph: Graph, onz_g_graph: Graph
-) -> None:
+def test_build_mapping_rejects_unknown_subject_iri(omop_graph: Graph, onz_g_graph: Graph) -> None:
     with pytest.raises(UnresolvableCurieError):
         build_mapping(
             subject_curie="omop:NoSuchClass",
@@ -113,9 +106,7 @@ def test_build_mapping_rejects_unknown_subject_iri(
         )
 
 
-def test_build_mapping_rejects_unknown_object_iri(
-    omop_graph: Graph, onz_g_graph: Graph
-) -> None:
+def test_build_mapping_rejects_unknown_object_iri(omop_graph: Graph, onz_g_graph: Graph) -> None:
     with pytest.raises(UnresolvableCurieError):
         build_mapping(
             subject_curie="omop:Person",
@@ -128,9 +119,7 @@ def test_build_mapping_rejects_unknown_object_iri(
         )
 
 
-def test_build_mapping_rejects_unknown_prefix(
-    omop_graph: Graph, onz_g_graph: Graph
-) -> None:
+def test_build_mapping_rejects_unknown_prefix(omop_graph: Graph, onz_g_graph: Graph) -> None:
     with pytest.raises(UnknownPrefixError):
         build_mapping(
             subject_curie="nope:Person",
@@ -143,9 +132,7 @@ def test_build_mapping_rejects_unknown_prefix(
         )
 
 
-def test_build_mapping_accepts_arbitrary_predicate(
-    omop_graph: Graph, onz_g_graph: Graph
-) -> None:
+def test_build_mapping_accepts_arbitrary_predicate(omop_graph: Graph, onz_g_graph: Graph) -> None:
     """No predicate allowlist: any predicate_id string is passed through (see AGENTS.md)."""
     mapping = build_mapping(
         subject_curie="omop:Person",

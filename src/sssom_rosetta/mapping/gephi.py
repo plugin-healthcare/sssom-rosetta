@@ -29,7 +29,6 @@ the graph.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import networkx as nx
@@ -40,6 +39,8 @@ from rdflib.namespace import RDF, RDFS, SKOS
 from sssom_rosetta.mapping.io import mapping_set_to_graph
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from rdflib.term import Node
 
     from sssom_rosetta.models.sssom import MappingSet

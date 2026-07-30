@@ -8,14 +8,18 @@ offline and fast, per AGENTS.md's testing conventions.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from rdflib import Graph, URIRef
 
 from sssom_rosetta.mapping.io import read_mapping_set_csvw, write_sssom_tsv, write_ttl
 from sssom_rosetta.mapping.validate import SchemaConformanceError
-from sssom_rosetta.models.sssom import MappingSet
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from sssom_rosetta.models.sssom import MappingSet
 
 MAPPING_SET_ID = "https://example.org/mappings/omop-onz-g"
 LICENSE = "https://creativecommons.org/publicdomain/zero/1.0/"
@@ -136,9 +140,7 @@ def test_read_mapping_set_csvw_rejects_invalid_rows(tmp_path: Path) -> None:
     csv_path = tmp_path / "bad.csv"
     metadata_path = tmp_path / "bad-metadata.json"
     # Missing the required mapping_justification column/value.
-    csv_path.write_text(
-        "subject_id,predicate_id,object_id\nomop:Person,skos:exactMatch,onz-g:Client\n"
-    )
+    csv_path.write_text("subject_id,predicate_id,object_id\nomop:Person,skos:exactMatch,onz-g:Client\n")
     metadata = {
         "@context": "http://www.w3.org/ns/csvw",
         "url": "bad.csv",
@@ -161,9 +163,7 @@ def test_read_mapping_set_csvw_rejects_invalid_rows(tmp_path: Path) -> None:
         )
 
 
-def test_write_sssom_tsv_contains_yaml_header_and_rows(
-    mapping_set: MappingSet, tmp_path: Path
-) -> None:
+def test_write_sssom_tsv_contains_yaml_header_and_rows(mapping_set: MappingSet, tmp_path: Path) -> None:
     output_path = tmp_path / "build" / "mappings" / "omop-onz-g.sssom.tsv"
 
     write_sssom_tsv(mapping_set, output_path)
@@ -197,9 +197,7 @@ def test_write_sssom_tsv_contains_yaml_header_and_rows(
     assert "orcid:0000-0000-0000-0001|orcid:0000-0000-0000-0002" in body_lines[1]
 
 
-def test_write_ttl_creates_expected_triples(
-    mapping_set: MappingSet, tmp_path: Path
-) -> None:
+def test_write_ttl_creates_expected_triples(mapping_set: MappingSet, tmp_path: Path) -> None:
     output_path = tmp_path / "build" / "mappings" / "omop-onz-g.ttl"
 
     write_ttl(mapping_set, output_path, prefix_map=PREFIX_MAP)
@@ -215,9 +213,7 @@ def test_write_ttl_creates_expected_triples(
     assert (subject, predicate, obj) in graph
 
 
-def test_write_ttl_creates_parent_directories(
-    mapping_set: MappingSet, tmp_path: Path
-) -> None:
+def test_write_ttl_creates_parent_directories(mapping_set: MappingSet, tmp_path: Path) -> None:
     output_path = tmp_path / "nested" / "dir" / "omop-onz-g.ttl"
 
     write_ttl(mapping_set, output_path, prefix_map=PREFIX_MAP)

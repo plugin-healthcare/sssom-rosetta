@@ -11,11 +11,13 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import requests
 from rdflib import Graph
 
-from sssom_rosetta.ontology.sources import OntologySource
+if TYPE_CHECKING:
+    from sssom_rosetta.ontology.sources import OntologySource
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,7 @@ class OntologyFetchError(Exception):
     """Raised when downloading an ontology source fails."""
 
     def __init__(self, url: str, exc: Exception) -> None:
+        """Build the error message from the failing ``url`` and the underlying ``exc``."""
         super().__init__(f"Failed to fetch ontology from {url!r}: {exc}")
 
 
@@ -33,6 +36,7 @@ class ChecksumMismatchError(Exception):
     """Raised when a downloaded ontology's checksum doesn't match the registry."""
 
     def __init__(self, source: OntologySource, actual: str) -> None:
+        """Build the error message from the ``source`` and its ``actual`` checksum."""
         super().__init__(
             f"Checksum mismatch for ontology source {source.name!r} "
             f"(version {source.version!r}): "
