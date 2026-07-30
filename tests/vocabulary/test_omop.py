@@ -5,8 +5,11 @@
 ``rdflib.Graph``, so membership is checked with SPARQL SELECT queries
 instead of ``(s, p, o) in graph`` -- :func:`objects` below runs
 ``SELECT ?o WHERE { <subject> <predicate> ?o }`` and returns the bound
-values as plain Python strings (IRIs unwrapped from their ``<...>`` form,
-literals left in their ``"value"@lang`` / ``"value"`` SPARQL-results form).
+values as plain Python strings (IRIs unwrapped from their ``<...>`` form).
+Literals come back in maplib's own query-result rendering: a
+language-tagged literal renders as ``"value"@lang`` (quoted, with the tag),
+while a plain/untyped literal (e.g. ``xsd:string`` with no language tag)
+renders as the bare value with no surrounding quotes.
 """
 
 from __future__ import annotations
@@ -40,7 +43,12 @@ RELATIONSHIPS = pl.DataFrame(
 
 
 def objects(model, subject: str, predicate: str) -> list[str]:
-    """Return the bound ``?o`` values for ``<subject> <predicate> ?o``."""
+    """Return the bound ``?o`` values for ``<subject> <predicate> ?o``.
+
+    Language-tagged literals come back quoted, e.g. ``'"value"@en'``; plain
+    literals come back bare, e.g. ``"value"`` with no quotes -- see the
+    module docstring above for why these two forms differ.
+    """
     query = f"SELECT ?o WHERE {{ <{subject}> <{predicate}> ?o }}"
     return model.query(query)["o"].to_list()
 

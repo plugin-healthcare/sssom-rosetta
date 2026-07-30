@@ -15,7 +15,6 @@ dependencies = [
     "typer>=0.26,<0.27",
     "tara-dev",
     "networkx>=3,<4",
-    "marimo>=0.23.14",
     "maplib>=0.20.19",
 ]
 
@@ -36,6 +35,7 @@ dev = [
     "docling-core",
     "linkml>=1.11,<2",
     "maplib>=0.20.19",
+    "marimo>=0.23.14",
     "pytest>=9.1.1",
     "ruff>=0.15.21",
     "rust-just>=1.56,<2",

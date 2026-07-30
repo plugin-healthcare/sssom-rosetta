@@ -72,3 +72,13 @@ ref = "main"
 repo = "https://github.com/anthropics/skills"
 path = "skills/webapp-testing"
 ref = "main"
+
+[skills.maplib]
+repo = "https://github.com/DataTreehouse/maplib-skill"
+path = "/"
+ref = "main"
+
+[skills.ottr]
+repo = "https://github.com/DataTreehouse/ottr-skill"
+path = "/"
+ref = "main"

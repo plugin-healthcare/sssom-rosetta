@@ -34,6 +34,7 @@ CONCEPT_TEMPLATE_IRI = "http://www.w3.org/2004/02/skos/core#OmopConceptTemplate"
 CONCEPT_TEMPLATE = """
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix ottr: <http://ns.ottr.xyz/0.4/> .
 
 skos:OmopConceptTemplate [
     ?subject,

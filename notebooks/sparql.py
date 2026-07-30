@@ -9,8 +9,8 @@ def _():
     from pathlib import Path
 
     import marimo as mo
-    from maplib import Model
     import polars as pl
+    from maplib import Model
 
     ROOT = Path(__file__).parent.parent
     VOCAB = ROOT / "build/vocabularies/omop.ttl"
@@ -54,7 +54,6 @@ def _(vocab):
     ORDER BY DESC(?n)
     """)
     vocab_pair_counts
-    return
 
 
 @app.cell
@@ -74,13 +73,11 @@ def _(vocab):
     }
     """)
     snomed_icd10_bridge
-    return
 
 
 @app.cell
 def _(OMOP_CONCEPT_RELATIONSHIP, pl):
     omop_relationship = pl.scan_csv(OMOP_CONCEPT_RELATIONSHIP, separator="\t")
-    return
 
 
 @app.cell
@@ -98,7 +95,6 @@ def _(mo):
         cdm,
         theme="neutral",
     )
-    return
 
 
 @app.cell
