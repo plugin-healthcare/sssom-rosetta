@@ -16,6 +16,7 @@ class UnknownOntologySourceError(KeyError):
     """Raised when a requested ontology source is not in the registry."""
 
     def __init__(self, name: str) -> None:
+        """Build the error message from the unknown ``name``, listing known sources."""
         known = ", ".join(sorted(ONTOLOGY_SOURCES))
         super().__init__(f"Unknown ontology source {name!r}. Known sources: {known}")
 

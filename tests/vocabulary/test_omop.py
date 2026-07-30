@@ -1,10 +1,17 @@
-"""Tests for the OMOP/Athena graph builder and cross-linking."""
+"""Tests for the OMOP/Athena graph builder and cross-linking.
+
+``omop.build_graph`` returns a ``maplib.Model`` (see
+``.agents/plan/2026-07-30-implementation-maplib.md``), not an
+``rdflib.Graph``, so membership is checked with SPARQL SELECT queries
+instead of ``(s, p, o) in graph`` -- :func:`objects` below runs
+``SELECT ?o WHERE { <subject> <predicate> ?o }`` and returns the bound
+values as plain Python strings (IRIs unwrapped from their ``<...>`` form,
+literals left in their ``"value"@lang`` / ``"value"`` SPARQL-results form).
+"""
 
 from __future__ import annotations
 
 import polars as pl
-from rdflib import Literal
-from rdflib.namespace import RDF, SKOS
 
 from sssom_rosetta.vocabulary import omop
 from sssom_rosetta.vocabulary.namespaces import omop_iri, sct_iri, source_concept_iri
@@ -32,6 +39,17 @@ RELATIONSHIPS = pl.DataFrame(
 )
 
 
+def objects(model, subject: str, predicate: str) -> list[str]:
+    """Return the bound ``?o`` values for ``<subject> <predicate> ?o``."""
+    query = f"SELECT ?o WHERE {{ <{subject}> <{predicate}> ?o }}"
+    return model.query(query)["o"].to_list()
+
+
+def iris(model, subject: str, predicate: str) -> list[str]:
+    """Like :func:`objects`, but strips the ``<...>`` wrapper from IRI results."""
+    return [value.removeprefix("<").removesuffix(">") for value in objects(model, subject, predicate)]
+
+
 def test_source_concept_iri_returns_none_for_rxnorm_extension() -> None:
     assert source_concept_iri("RxNorm Extension", "") is None
     assert source_concept_iri("SNOMED", "44054006") == sct_iri("44054006")
@@ -48,31 +66,37 @@ def test_source_concept_iri_percent_encodes_illegal_chars() -> None:
 
 
 def test_build_graph_concept_nodes_and_crosslinks() -> None:
-    graph = omop.build_graph(CONCEPTS, RELATIONSHIPS)
+    model = omop.build_graph(CONCEPTS, RELATIONSHIPS)
 
-    loinc_node = omop_iri("1001")
-    assert (loinc_node, RDF.type, SKOS.Concept) in graph
-    assert (
-        loinc_node,
-        SKOS.prefLabel,
-        Literal("Glucose [Mass/volume]", lang="en"),
-    ) in graph
-    assert (loinc_node, SKOS.notation, Literal("2345-7")) in graph
+    loinc_node = str(omop_iri("1001"))
+    rdf_type = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+    skos_concept = "http://www.w3.org/2004/02/skos/core#Concept"
+    pref_label = "http://www.w3.org/2004/02/skos/core#prefLabel"
+    notation = "http://www.w3.org/2004/02/skos/core#notation"
+    exact_match = "http://www.w3.org/2004/02/skos/core#exactMatch"
+
+    assert iris(model, loinc_node, rdf_type) == [skos_concept]
+    assert objects(model, loinc_node, pref_label) == ['"Glucose [Mass/volume]"@en']
+    assert objects(model, loinc_node, notation) == ["2345-7"]
     # LOINC concept cross-linked to its native source IRI.
-    assert (loinc_node, SKOS.exactMatch, source_concept_iri("LOINC", "2345-7")) in graph
+    assert str(source_concept_iri("LOINC", "2345-7")) in iris(model, loinc_node, exact_match)
 
     # SNOMED concept cross-linked to sct: IRI (the merge bridge).
-    assert (omop_iri("1002"), SKOS.exactMatch, sct_iri("44054006")) in graph
+    assert str(sct_iri("44054006")) in iris(model, str(omop_iri("1002")), exact_match)
 
     # RxNorm Extension: no native code, so no exactMatch to a source IRI.
-    ext_node = omop_iri("1004")
-    assert (ext_node, RDF.type, SKOS.Concept) in graph
-    assert not list(graph.objects(ext_node, SKOS.exactMatch))
+    ext_node = str(omop_iri("1004"))
+    assert iris(model, ext_node, rdf_type) == [skos_concept]
+    assert objects(model, ext_node, exact_match) == []
+    assert objects(model, ext_node, notation) == []
 
 
 def test_build_graph_relationship_predicates() -> None:
-    graph = omop.build_graph(CONCEPTS, RELATIONSHIPS)
+    model = omop.build_graph(CONCEPTS, RELATIONSHIPS)
+    exact_match = "http://www.w3.org/2004/02/skos/core#exactMatch"
+    broad_match = "http://www.w3.org/2004/02/skos/core#broadMatch"
+
     # 'Maps to' -> exactMatch between OMOP nodes.
-    assert (omop_iri("1003"), SKOS.exactMatch, omop_iri("1002")) in graph
+    assert str(omop_iri("1002")) in iris(model, str(omop_iri("1003")), exact_match)
     # 'Is a' -> broadMatch (child -> parent).
-    assert (omop_iri("1002"), SKOS.broadMatch, omop_iri("1001")) in graph
+    assert iris(model, str(omop_iri("1002")), broad_match) == [str(omop_iri("1001"))]

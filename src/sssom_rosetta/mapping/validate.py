@@ -18,12 +18,16 @@ Two independent checks are performed here:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-
-from rdflib import Graph
+from typing import TYPE_CHECKING
 
 from sssom_rosetta.mapping.author import UnknownPrefixError, expand_curie
-from sssom_rosetta.models.sssom import Mapping, MappingSet
+from sssom_rosetta.models.sssom import MappingSet
 from sssom_rosetta.ontology.catalog import resource_exists
+
+if TYPE_CHECKING:
+    from rdflib import Graph
+
+    from sssom_rosetta.models.sssom import Mapping
 
 
 class SchemaConformanceError(ValueError):
@@ -70,15 +74,12 @@ def validate_schema_conformance(
         SchemaConformanceError: If the data doesn't conform to the SSSOM
             schema's generated Pydantic models.
     """
-    payload = (
-        mapping_set.model_dump() if isinstance(mapping_set, MappingSet) else mapping_set
-    )
+    payload = mapping_set.model_dump() if isinstance(mapping_set, MappingSet) else mapping_set
     try:
         return MappingSet.model_validate(payload)
-    except Exception as exc:  # noqa: BLE001 - re-raised as a domain-specific error
-        raise SchemaConformanceError(
-            f"MappingSet failed schema validation: {exc}"
-        ) from exc
+    except Exception as exc:
+        msg = f"MappingSet failed schema validation: {exc}"
+        raise SchemaConformanceError(msg) from exc
 
 
 def _check_mapping_referential_integrity(
@@ -94,11 +95,7 @@ def _check_mapping_referential_integrity(
         ("object_id", mapping.object_id, object_graph),
     ):
         if curie is None:
-            issues.append(
-                ReferentialIntegrityIssue(
-                    index, field_name, "", f"{field_name} is missing"
-                )
-            )
+            issues.append(ReferentialIntegrityIssue(index, field_name, "", f"{field_name} is missing"))
             continue
         try:
             iri = expand_curie(curie, prefix_map)
@@ -138,11 +135,7 @@ def validate_referential_integrity(
     mappings = mapping_set.mappings or []
     issues: list[ReferentialIntegrityIssue] = []
     for index, mapping in enumerate(mappings):
-        issues.extend(
-            _check_mapping_referential_integrity(
-                index, mapping, prefix_map, subject_graph, object_graph
-            )
-        )
+        issues.extend(_check_mapping_referential_integrity(index, mapping, prefix_map, subject_graph, object_graph))
     return issues
 
 

@@ -14,8 +14,10 @@ import hashlib
 import logging
 import zipfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from sssom_rosetta.vocabulary.sources import VocabularySource
+if TYPE_CHECKING:
+    from sssom_rosetta.vocabulary.sources import VocabularySource
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,7 @@ class VocabularyChecksumMismatchError(Exception):
     """Raised when a provided ZIP's checksum doesn't match the registry."""
 
     def __init__(self, source: VocabularySource, actual: str) -> None:
+        """Build the error message from the ``source`` and its ``actual`` checksum."""
         super().__init__(
             f"Checksum mismatch for vocabulary source {source.name!r} "
             f"(version {source.version!r}): "
@@ -76,7 +79,8 @@ def ingest_zip(
         return target_dir
 
     if not zip_path.is_file():
-        raise VocabularyIngestError(f"ZIP not found: {zip_path}")
+        msg = f"ZIP not found: {zip_path}"
+        raise VocabularyIngestError(msg)
 
     digest = hashlib.sha256(zip_path.read_bytes()).hexdigest()
     if source.checksum is not None and digest != source.checksum:
@@ -95,15 +99,14 @@ def ingest_zip(
         with zipfile.ZipFile(zip_path) as archive:
             archive.extractall(target_dir)
     except zipfile.BadZipFile as exc:
-        raise VocabularyIngestError(f"Not a valid ZIP: {zip_path}") from exc
+        msg = f"Not a valid ZIP: {zip_path}"
+        raise VocabularyIngestError(msg) from exc
 
     logger.info("Extracted %r release into %s", source.name, target_dir)
     return target_dir
 
 
-def find_file(
-    root: Path, *, prefix: str = "", suffix: str = "", contains: str = ""
-) -> Path:
+def find_file(root: Path, *, prefix: str = "", suffix: str = "", contains: str = "") -> Path:
     """Find exactly one file under ``root`` matching ``prefix``/``suffix``.
 
     RF2 and Athena packages nest files in per-release subdirectories with
@@ -118,21 +121,17 @@ def find_file(
     matches = [
         path
         for path in root.rglob("*")
-        if path.is_file()
-        and path.name.startswith(prefix)
-        and path.name.endswith(suffix)
-        and (contains in str(path))
+        if path.is_file() and path.name.startswith(prefix) and path.name.endswith(suffix) and (contains in str(path))
     ]
     if not matches:
-        raise VocabularyIngestError(
-            f"No file matching prefix={prefix!r} suffix={suffix!r} "
-            f"contains={contains!r} under {root}"
-        )
+        msg = f"No file matching prefix={prefix!r} suffix={suffix!r} contains={contains!r} under {root}"
+        raise VocabularyIngestError(msg)
     if len(matches) > 1:
         joined = ", ".join(str(match) for match in sorted(matches))
-        raise VocabularyIngestError(
+        msg = (
             f"Expected exactly one file matching prefix={prefix!r} "
             f"suffix={suffix!r} contains={contains!r} under {root}, "
             f"found: {joined}"
         )
+        raise VocabularyIngestError(msg)
     return matches[0]

@@ -8,8 +8,13 @@ data; callers pass in a graph already produced by ``ontology.loader``.
 
 from __future__ import annotations
 
-from rdflib import RDF, RDFS, Graph, URIRef
+from typing import TYPE_CHECKING
+
+from rdflib import RDF, RDFS, URIRef
 from rdflib.namespace import OWL, SKOS
+
+if TYPE_CHECKING:
+    from rdflib import Graph
 
 _CLASS_TYPES = (OWL.Class, RDFS.Class)
 _PROPERTY_TYPES = (

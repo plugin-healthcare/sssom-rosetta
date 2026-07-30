@@ -8,8 +8,8 @@ releases rather than pre-built OWL ontologies. The workflow is:
    unzip into ``data/vocabularies/<name>/<version>/``.
 3. ``rf2`` — polars readers for SNOMED CT RF2 tab-separated files.
 4. ``loinc_snomed`` — RF2 → ``rdflib.Graph`` → ``loinc-snomed.ttl``.
-5. ``omop`` — Athena CSV → ``rdflib.Graph`` → ``omop.ttl`` with OMOP
-   ``concept_id`` nodes cross-linked to source-vocabulary concepts.
+5. ``omop`` — Athena CSV → **maplib** ``Model`` (OTTR-mapped) → ``omop.ttl``
+   with OMOP ``concept_id`` nodes cross-linked to source-vocabulary concepts.
 6. ``merge`` — combine the graphs into ``rosetta-vocabularies.ttl``.
 
 Everything here produces a lightweight SKOS/RDFS graph (see

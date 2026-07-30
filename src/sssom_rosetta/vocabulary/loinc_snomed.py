@@ -15,15 +15,20 @@ not materialised here — see
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-import polars as pl
-from rdflib import Graph, Literal, URIRef
+from rdflib import Graph, Literal
 from rdflib.namespace import OWL, RDF, RDFS, SKOS
 
 from sssom_rosetta.vocabulary import rf2
 from sssom_rosetta.vocabulary.fetch import find_file
 from sssom_rosetta.vocabulary.namespaces import PREFIX_MAP, sct_iri
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import polars as pl
+    from rdflib import URIRef
 
 
 def _bind_prefixes(graph: Graph) -> None:
@@ -73,18 +78,10 @@ def build_graph(
 
 def build_from_release(release_dir: Path) -> Graph:
     """Locate RF2 Snapshot files under ``release_dir`` and build the graph."""
-    concept = rf2.read_rf2(
-        find_file(release_dir, prefix="sct2_Concept_Snapshot", suffix=".txt")
-    )
-    description = rf2.read_rf2(
-        find_file(release_dir, prefix="sct2_Description_Snapshot", suffix=".txt")
-    )
-    language = rf2.read_rf2(
-        find_file(release_dir, prefix="der2_cRefset_LanguageSnapshot", suffix=".txt")
-    )
-    relationship = rf2.read_rf2(
-        find_file(release_dir, prefix="sct2_Relationship_Snapshot", suffix=".txt")
-    )
+    concept = rf2.read_rf2(find_file(release_dir, prefix="sct2_Concept_Snapshot", suffix=".txt"))
+    description = rf2.read_rf2(find_file(release_dir, prefix="sct2_Description_Snapshot", suffix=".txt"))
+    language = rf2.read_rf2(find_file(release_dir, prefix="der2_cRefset_LanguageSnapshot", suffix=".txt"))
+    relationship = rf2.read_rf2(find_file(release_dir, prefix="sct2_Relationship_Snapshot", suffix=".txt"))
     return build_graph(concept, description, language, relationship)
 
 

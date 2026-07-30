@@ -32,11 +32,10 @@ hand-derived from anything downstream.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pandas as pd
-from csvw import CSVW, Table
+from csvw import CSVW
 from curies import Converter
 from linkml_runtime.utils.metamodelcore import URI
 from rdflib import Graph, URIRef
@@ -45,7 +44,13 @@ from sssom.writers import write_tsv
 
 from sssom_rosetta.mapping.author import expand_curie
 from sssom_rosetta.mapping.validate import validate_schema_conformance
-from sssom_rosetta.models.sssom import MappingSet
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from csvw import Table
+
+    from sssom_rosetta.models.sssom import MappingSet
 
 
 def read_mapping_set_csvw(
@@ -55,7 +60,7 @@ def read_mapping_set_csvw(
     mapping_set_id: str,
     license: str,  # noqa: A002 - matches the SSSOM field name
     curie_map: dict[str, str] | None = None,
-    **mapping_set_fields: Any,
+    **mapping_set_fields: Any,  # noqa: ANN401 - forwards arbitrary optional SSSOM MappingSet fields
 ) -> MappingSet:
     """Parse an authored CSV + CSVW metadata JSON pair into a ``MappingSet``.
 
@@ -85,18 +90,12 @@ def read_mapping_set_csvw(
     csvw_table = CSVW(str(csv_path), md_url=str(metadata_path))
     rows: list[dict[str, Any]] = []
     for table in csvw_table.tables:
-        table = cast(Table, table)
+        table = cast("Table", table)
         for row in table.iterdicts():
-            row_dict = cast(dict[str, Any], row)
+            row_dict = cast("dict[str, Any]", row)
             # Drop empty/None cells so optional Mapping fields fall back to
             # their model defaults instead of being set to "" or None.
-            rows.append(
-                {
-                    key: value
-                    for key, value in row_dict.items()
-                    if value not in (None, "")
-                }
-            )
+            rows.append({key: value for key, value in row_dict.items() if value not in (None, "")})
 
     payload: dict[str, Any] = {
         "mapping_set_id": URI(mapping_set_id),
@@ -119,17 +118,9 @@ def write_sssom_tsv(mapping_set: MappingSet, output_path: Path) -> None:
     mappings = mapping_set.mappings or []
     df = pd.DataFrame([_mapping_row(mapping.model_dump()) for mapping in mappings])
 
-    metadata = mapping_set.model_dump(
-        exclude={"mappings", "curie_map"}, exclude_none=True
-    )
-    prefix_map = {
-        prefix: str(iri) for prefix, iri in (mapping_set.curie_map or {}).items()
-    }
-    converter = (
-        Converter.from_prefix_map(prefix_map)
-        if prefix_map
-        else Converter.from_prefix_map({})
-    )
+    metadata = mapping_set.model_dump(exclude={"mappings", "curie_map"}, exclude_none=True)
+    prefix_map = {prefix: str(iri) for prefix, iri in (mapping_set.curie_map or {}).items()}
+    converter = Converter.from_prefix_map(prefix_map) if prefix_map else Converter.from_prefix_map({})
 
     msdf = MappingSetDataFrame(df=df, converter=converter, metadata=metadata)
 
@@ -172,9 +163,8 @@ def mapping_set_to_graph(mapping_set: MappingSet, *, prefix_map: dict[str, str])
 
     for index, mapping in enumerate(mapping_set.mappings or []):
         if mapping.subject_id is None or mapping.object_id is None:
-            raise ValueError(
-                f"Mapping at index {index} is missing subject_id/object_id required to emit a triple"
-            )
+            msg = f"Mapping at index {index} is missing subject_id/object_id required to emit a triple"
+            raise ValueError(msg)
         subject_iri = expand_curie(mapping.subject_id, prefix_map)
         predicate_iri = expand_curie(mapping.predicate_id, prefix_map)
         object_iri = expand_curie(mapping.object_id, prefix_map)
@@ -183,9 +173,7 @@ def mapping_set_to_graph(mapping_set: MappingSet, *, prefix_map: dict[str, str])
     return graph
 
 
-def write_ttl(
-    mapping_set: MappingSet, output_path: Path, *, prefix_map: dict[str, str]
-) -> None:
+def write_ttl(mapping_set: MappingSet, output_path: Path, *, prefix_map: dict[str, str]) -> None:
     """Write an RDF/Turtle graph of the mapping set's triples.
 
     This is a deliberate simplification over reifying each mapping's

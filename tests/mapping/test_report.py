@@ -9,7 +9,7 @@ AGENTS.md's testing conventions.
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from linkml_runtime.utils.metamodelcore import URI
 
@@ -23,6 +23,9 @@ from sssom_rosetta.mapping.report import (
     render_markdown,
 )
 from sssom_rosetta.models.sssom import Mapping, MappingSet
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 MAPPING_SET_ID = URI("https://example.org/mappings/omop-onz-g")
 LICENSE = URI("https://creativecommons.org/publicdomain/zero/1.0/")
@@ -78,9 +81,7 @@ def test_load_mapping_set_tsv_round_trips_written_tsv(tmp_path: Path) -> None:
 def test_load_mapping_set_tsv_round_trips_multivalued_author_id(
     tmp_path: Path,
 ) -> None:
-    mapping_set = _mapping_set(
-        _mapping(author_id=["orcid:0000-0000-0000-0001", "orcid:0000-0000-0000-0002"])
-    )
+    mapping_set = _mapping_set(_mapping(author_id=["orcid:0000-0000-0000-0001", "orcid:0000-0000-0000-0002"]))
     tsv_path = tmp_path / "multi-author.sssom.tsv"
     write_sssom_tsv(mapping_set, tsv_path)
 

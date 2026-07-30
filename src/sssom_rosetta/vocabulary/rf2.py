@@ -1,4 +1,4 @@
-"""Polars readers for SNOMED CT RF2 tab-separated release files.
+r"""Polars readers for SNOMED CT RF2 tab-separated release files.
 
 All RF2 files are UTF-8, tab-separated, with a header row and one
 component-version per row. Two hard rules when reading them with polars:
@@ -14,9 +14,12 @@ component); helpers here still filter ``active == "1"`` defensively.
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import polars as pl
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Well-known SCTIDs used to classify RF2 rows.
 IS_A_TYPE_ID = "116680003"
@@ -46,11 +49,7 @@ def isa_edges(relationship: pl.DataFrame) -> pl.DataFrame:
     ``sourceId`` is the more specific (child) concept; ``destinationId`` the
     broader (parent), matching ``skos:broadMatch`` direction.
     """
-    return (
-        active_rows(relationship)
-        .filter(pl.col("typeId") == IS_A_TYPE_ID)
-        .select("sourceId", "destinationId")
-    )
+    return active_rows(relationship).filter(pl.col("typeId") == IS_A_TYPE_ID).select("sourceId", "destinationId")
 
 
 def preferred_terms(description: pl.DataFrame, language: pl.DataFrame) -> pl.DataFrame:
@@ -60,18 +59,14 @@ def preferred_terms(description: pl.DataFrame, language: pl.DataFrame) -> pl.Dat
     ``acceptabilityId`` = preferred. Joins Description (active) to the active
     language refset on the description ``id`` = ``referencedComponentId``.
     """
-    active_desc = active_rows(description).select(
-        "id", "conceptId", "term", "languageCode"
-    )
+    active_desc = active_rows(description).select("id", "conceptId", "term", "languageCode")
     preferred = (
         active_rows(language)
         .filter(pl.col("acceptabilityId") == PREFERRED_ACCEPTABILITY_ID)
         .select("referencedComponentId")
         .unique()
     )
-    joined = active_desc.join(
-        preferred, left_on="id", right_on="referencedComponentId", how="inner"
-    )
+    joined = active_desc.join(preferred, left_on="id", right_on="referencedComponentId", how="inner")
     return joined.select("conceptId", "term", pl.col("languageCode").alias("lang"))
 
 

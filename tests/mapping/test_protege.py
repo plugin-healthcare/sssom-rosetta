@@ -9,7 +9,7 @@ exists alongside mapping/io.py's flat-triple write_ttl.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from linkml_runtime.utils.metamodelcore import URI
@@ -18,6 +18,9 @@ from rdflib import OWL, RDF, RDFS, Graph, URIRef
 from sssom_rosetta.mapping.io import read_mapping_set_csvw
 from sssom_rosetta.mapping.protege import build_combined_graph, write_owl_restrictions
 from sssom_rosetta.models.sssom import MappingSet
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 MAPPING_SET_ID = "https://example.org/mappings/omop-onz-g"
 LICENSE = "https://creativecommons.org/publicdomain/zero/1.0/"
@@ -64,9 +67,7 @@ def mapping_set(tmp_path: Path) -> MappingSet:
     )
 
 
-def test_exact_match_becomes_equivalent_class(
-    mapping_set: MappingSet, tmp_path: Path
-) -> None:
+def test_exact_match_becomes_equivalent_class(mapping_set: MappingSet, tmp_path: Path) -> None:
     output_path = tmp_path / "build" / "protege" / "omop-onz-g.combined.ttl"
 
     write_owl_restrictions(mapping_set, output_path, prefix_map=PREFIX_MAP)
@@ -79,9 +80,7 @@ def test_exact_match_becomes_equivalent_class(
     assert (person, OWL.equivalentClass, client) in graph
 
 
-def test_broad_match_becomes_existential_restriction(
-    mapping_set: MappingSet, tmp_path: Path
-) -> None:
+def test_broad_match_becomes_existential_restriction(mapping_set: MappingSet, tmp_path: Path) -> None:
     output_path = tmp_path / "build" / "protege" / "omop-onz-g.combined.ttl"
 
     write_owl_restrictions(mapping_set, output_path, prefix_map=PREFIX_MAP)
@@ -102,9 +101,7 @@ def test_broad_match_becomes_existential_restriction(
     assert (provider, RDFS.subClassOf, restriction) in graph
 
 
-def test_used_predicates_declared_as_object_properties(
-    mapping_set: MappingSet, tmp_path: Path
-) -> None:
+def test_used_predicates_declared_as_object_properties(mapping_set: MappingSet, tmp_path: Path) -> None:
     output_path = tmp_path / "build" / "protege" / "omop-onz-g.combined.ttl"
 
     write_owl_restrictions(mapping_set, output_path, prefix_map=PREFIX_MAP)
@@ -119,9 +116,7 @@ def test_used_predicates_declared_as_object_properties(
     assert (broad_match, RDF.type, OWL.ObjectProperty) in graph
 
 
-def test_write_owl_restrictions_creates_parent_directories(
-    mapping_set: MappingSet, tmp_path: Path
-) -> None:
+def test_write_owl_restrictions_creates_parent_directories(mapping_set: MappingSet, tmp_path: Path) -> None:
     output_path = tmp_path / "nested" / "dir" / "omop-onz-g.combined.ttl"
 
     write_owl_restrictions(mapping_set, output_path, prefix_map=PREFIX_MAP)
@@ -191,4 +186,3 @@ def test_build_combined_graph_merges_ontologies_and_mapping_axioms(
     assert (person, OWL.equivalentClass, client) in combined
     assert len(list(combined.subjects(RDF.type, OWL.Restriction))) == 1
     assert (provider, RDFS.subClassOf, None) in combined
-
