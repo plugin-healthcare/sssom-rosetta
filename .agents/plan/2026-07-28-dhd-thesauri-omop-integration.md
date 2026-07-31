@@ -3,10 +3,23 @@
 **Date:** 2026-07-28
 **Status:** Draft
 **Scope:** Ingest the DHD Diagnosethesaurus (DT) and Verrichtingenthesaurus (VT)
-CSV releases (uitleverformaat 5.0 / 4.3), build a SKOS Turtle graph per
-thesaurus, and cross-link it to the existing OMOP/LOINC-SNOMED vocabulary
-graph (`.agents/plan/2026-07-21-add-snomed-loinc-omop-vocabularies.md`) via
-shared SNOMED CT IRIs.
+CSV releases in **uitleverformaat4.3** (the format both sample releases on
+disk actually use — see §1), build a SKOS Turtle graph per thesaurus, and
+cross-link it to the existing OMOP/LOINC-SNOMED vocabulary graph
+(`.agents/plan/2026-07-21-add-snomed-loinc-omop-vocabularies.md`) via shared
+SNOMED CT IRIs.
+
+**Format version note:** the spec PDF reviewed in §9 is titled
+"Uitleverformaat-Thesauri-**5.0**", but both sample releases under
+`data/downloads/dhd-thesauri/` are `..._uitleverformaat4.3` folders (DT
+`Diagnosethesaurus_3.44_uitleverformaat4.3`, VT
+`Verrichtingenthesaurus_2.43_uitleverformaat4.3`). This increment targets
+**uitleverformaat4.3 only, for both DT and VT** — the file/column layout
+described below is read from the 4.3 CSVs, not the 5.0 spec's file matrix.
+Any 5.0-specific differences are out of scope until a 5.0 sample release is
+available; `sources.py` and `dhd.py` name the format version explicitly (see
+§3/§5) so a future 5.0 increment is an additive change, not a silent
+behaviour switch.
 
 ---
 
@@ -117,14 +130,20 @@ already-planned OMOP/LOINC-SNOMED graph after merging (same mechanism as
 
 ### Goals
 1. Parse DT `ThesaurusConcept` + `ThesaurusTerm` + `AfleidingICD10` +
-   `AfleidingDBC` with polars → SKOS Turtle (`dhd-diagnosethesaurus.ttl`).
-2. Parse VT `ThesaurusConcept` + `ThesaurusTerm` (SNOMED only) with polars →
-   SKOS Turtle (`dhd-verrichtingenthesaurus.ttl`).
+   `AfleidingDBC` (uitleverformaat4.3) with **polars + maplib/OTTR templates**
+   (see §5) → SKOS Turtle (`dhd-diagnosethesaurus.ttl`).
+2. Parse VT `ThesaurusConcept` + `ThesaurusTerm` (SNOMED only, uitleverformaat4.3)
+   with **polars + maplib/OTTR templates** → SKOS Turtle
+   (`dhd-verrichtingenthesaurus.ttl`).
 3. Wire both into the existing `rosetta vocabulary` CLI + `merge` step so DHD
    concepts land in the same merged `rosetta-vocabularies.ttl` as OMOP/LOINC-
    SNOMED, connected via shared `sct:`/`icd10:` IRIs.
 4. Respect DHD's temporal validity model (`Begindatum`/`Einddatum`) — only
    emit triples for currently-active rows.
+5. Make the source format version explicit in code: `dhd.py` names and
+   asserts `uitleverformaat4.3` (see §5's `FORMAT_VERSION` constant) rather
+   than leaving it implicit in comments, so parsing never silently drifts
+   onto a differently-shaped future release.
 
 ### Non-goals (this increment)
 - `CodeMapping` (APACHE IV/PICE/DSM-5/KinCor/ORPHA/MSRpatientgroep) — not
@@ -142,28 +161,67 @@ already-planned OMOP/LOINC-SNOMED graph after merging (same mechanism as
 
 ## 5. Architecture: extend the existing `vocabulary/` package
 
-Mirror the `omop.py` / `rf2.py` pattern already in
-`src/sssom_rosetta/vocabulary/`:
+Mirror the `omop.py` / `templates.py` pattern already in
+`src/sssom_rosetta/vocabulary/` — per
+`.agents/plan/2026-07-30-implementation-maplib.md`, graphs are assembled with
+**maplib**, not `rdflib`: polars DataFrames are mapped through declarative
+OTTR (stOTTR) templates via `Model.map`, using `?` on a template parameter to
+mark it optional so maplib drops the triple for null/unbound values instead
+of Python-side `if row[...]:` conditionals (see `templates.py`'s
+`CONCEPT_TEMPLATE` for the existing OMOP example). `dhd.py` follows the exact
+same shape: polars readers do filtering/shaping, `templates.py` gets new OTTR
+templates for the DHD-specific triple patterns, and `Model.map`/
+`Model.map_triples` do the graph assembly.
 
 ```
 src/sssom_rosetta/vocabulary/
   namespaces.py       # extend: add dhddt:, dhdvt:, dbc: to PREFIX_MAP
-  sources.py           # extend: register "dhd-diagnosethesaurus", "dhd-verrichtingenthesaurus" VocabularySource entries (kind="dhd-csv")
-  dhd.py               # NEW: polars readers + SKOS graph builder for DT + VT
-  merge.py             # no change needed — already generic over any Graph
+  sources.py           # extend: register "dhd-diagnosethesaurus", "dhd-verrichtingenthesaurus"
+                       #   VocabularySource entries (kind="dhd-csv", format_version="uitleverformaat4.3")
+  templates.py         # extend: add DHD OTTR templates (see below)
+  dhd.py               # NEW: polars readers + maplib graph builder for DT + VT (uitleverformaat4.3)
+  merge.py             # no change needed — already generic over any maplib Model
 tests/vocabulary/
   test_dhd.py          # NEW
-  fixtures/dhd/         # NEW: tiny synthetic ThesaurusConcept/ThesaurusTerm/AfleidingICD10/AfleidingDBC CSVs (DT) and ThesaurusConcept/ThesaurusTerm (VT)
+  fixtures/dhd/         # NEW: tiny synthetic ThesaurusConcept/ThesaurusTerm/AfleidingICD10/AfleidingDBC CSVs (DT) and ThesaurusConcept/ThesaurusTerm (VT), uitleverformaat4.3 column layout
 ```
+
+### `templates.py` additions: DHD OTTR templates
+
+Two new stOTTR templates (registered via `model.add_template(...)`,
+analogous to `CONCEPT_TEMPLATE`):
+
+- `skos:DhdConceptTemplate` — one row per DHD `ConceptID`:
+  `[?subject, ? ?snomed]` → `ottr:Triple(?subject, rdf:type, skos:Concept)`,
+  `ottr:Triple(?subject, skos:exactMatch, ?snomed)`. Used for **both** DT and
+  VT (VT rows simply never populate `?snomed`-bearing rows without a match,
+  same optional-drop behaviour as `CONCEPT_TEMPLATE.label`).
+- `skos:DhdCloseMatchTemplate` — a plain `[?subject, ?object]` →
+  `ottr:Triple(?subject, skos:closeMatch, ?object)` template, mapped once
+  over the ICD10 rows and once over the DBC rows (DT only). Kept as a
+  template (not `map_triples`) because both are always 1:1 required columns
+  per row (no optional semantics needed) but this keeps DHD's two triple
+  shapes declaratively symmetric with the concept template rather than
+  mixing template + raw-triple styles for no reason.
+
+Every DHD template constant (`DHD_CONCEPT_TEMPLATE`,
+`DHD_CONCEPT_TEMPLATE_IRI`, `DHD_CLOSE_MATCH_TEMPLATE`,
+`DHD_CLOSE_MATCH_TEMPLATE_IRI`) lives in `templates.py` next to the existing
+OMOP ones, following the same naming convention.
 
 ### `dhd.py` design (mirrors `omop.py`)
 
+- `FORMAT_VERSION = "uitleverformaat4.3"` — a module-level constant asserted
+  against (or embedded in) the discovered file names in
+  `build_from_release`, so a mismatched/renamed release directory (e.g. a
+  future `uitleverformaat5.0` drop) fails fast with a clear error instead of
+  silently mis-parsing columns that moved between spec versions.
 - `_scan_dhd(path)`: `pl.scan_csv(path, quote_char='"', infer_schema_length=0)`
-  — note DHD files are **comma-separated with quoted fields** (unlike RF2/
-  Athena's tab-separated), per spec §2.2.2. All columns read as `Utf8`.
+  — note DHD uitleverformaat4.3 files are **comma-separated with quoted
+  fields** (unlike RF2/Athena's tab-separated). All columns read as `Utf8`.
 - `_active(df)`: filter rows where today (or a pinned as-of date) falls
-  within `[Begindatum, Einddatum]` — DHD's temporal-validity convention
-  (spec §3.3). Parametrize the as-of date for reproducible builds.
+  within `[Begindatum, Einddatum]` — DHD's temporal-validity convention.
+  Parametrize the as-of date for reproducible builds.
 - `load_concepts(thesaurus_concept_csv)` → concepts with `ConceptID`,
   `TypeConcept`.
 - `load_snomed_terms(thesaurus_term_csv)` → one row per `ConceptID` with a
@@ -173,18 +231,25 @@ tests/vocabulary/
   active rows, deduplicated by `Volgnummer` if needed (kept — cardinality is
   intentionally 0..N).
 - `load_dbc(afleiding_dbc_csv)` (DT only) → `(ConceptID, DBC_ID)` pairs,
-  active rows, **excluding rows where `DBC_ID` is empty** (spec §4.6: a row
-  may exist for a specialism with no DBC).
+  active rows, **excluding rows where `DBC_ID` is empty** (a row may exist
+  for a specialism with no DBC).
+- `_concept_rows(concepts, snomed_terms)` → left-joins concepts to their
+  (optional) SNOMED term, builds the `dhddt:`/`dhdvt:` subject IRI column and
+  the `sct:` object IRI column (null when no match), ready for
+  `Model.map(DHD_CONCEPT_TEMPLATE_IRI, ...)`.
+- `_close_match_rows(concept_iri_column, code_iri_column)` → the plain
+  `subject, object` frame for `Model.map(DHD_CLOSE_MATCH_TEMPLATE_IRI, ...)`,
+  reused for both ICD10 and DBC rows.
 - `build_graph(thesaurus: Literal["dt", "vt"], concepts, snomed_terms,
-  icd10=None, dbc=None) -> Graph`:
-  - `dhddt:<ConceptID>` / `dhdvt:<ConceptID>` `a skos:Concept`.
-  - `... skos:exactMatch sct:<SnomedID>` when present.
-  - DT only: `... skos:closeMatch icd10:<code>` for each ICD10 row;
-    `... skos:closeMatch dbc:<DBC_ID>` for each DBC row.
-- `build_from_release(release_dir, thesaurus) -> Graph`: locate files by
-  exact name (reuse `fetch.find_file`), dispatch DT vs VT column set.
-- `write_ttl` — reuse `omop.write_ttl` (already generic) rather than
-  duplicating.
+  icd10=None, dbc=None) -> Model`:
+  - `model.add_template(DHD_CONCEPT_TEMPLATE)` /
+    `model.add_template(DHD_CLOSE_MATCH_TEMPLATE)`, then `Model.map(...)`
+    calls per §above — no manual triple loops, mirroring `omop.build_graph`.
+- `build_from_release(release_dir, thesaurus) -> Model`: locate files by
+  exact name (reuse `fetch.find_file`), asserting the `FORMAT_VERSION` marker
+  is present in the release directory name; dispatch DT vs VT column set.
+- `write_ttl` — reuse `omop.write_ttl` (already generic over any maplib
+  `Model`) rather than duplicating.
 
 ### CLI (`cli.py`, `vocabulary_app`)
 
@@ -219,9 +284,9 @@ window. For a single reproducible graph build:
 
 ## 7. Open questions to confirm before/at implementation
 
-1. **DBC IRI scheme**: no external stable URI scheme found for NZa DBC
-   diagnosis codes; proposed `https://w3id.org/dhd/dbc/{DBC_ID}` — confirm or
-   supply an authoritative alternative (e.g. if NZa/DHD publish one).
+1. **DBC IRI scheme** — **confirmed**: use the proposed
+   `https://w3id.org/dhd/dbc/{DBC_ID}` (no external stable URI scheme exists
+   for NZa DBC diagnosis codes).
 2. Should `Volgnummer` ordering / `Advies` / `Logica` be captured (e.g. as
    `skos:notation` "rank" or `rdf:List`) in a follow-up, or dropped entirely
    as UI/EPD-only guidance? Current plan: drop.
@@ -242,13 +307,19 @@ window. For a single reproducible graph build:
 ## 8. Deliverables checklist
 
 - [ ] `namespaces.py`: add `dhddt:`, `dhdvt:`, `dbc:` prefixes
-- [ ] `sources.py`: register DHD DT/VT `VocabularySource` entries
-- [ ] `dhd.py`: readers + graph builder (DT full, VT SNOMED-only) + tests
-- [ ] `tests/vocabulary/fixtures/dhd/`: tiny synthetic CSVs for DT and VT
+- [ ] `sources.py`: register DHD DT/VT `VocabularySource` entries with
+      explicit `format_version="uitleverformaat4.3"`
+- [ ] `templates.py`: add `DHD_CONCEPT_TEMPLATE` and
+      `DHD_CLOSE_MATCH_TEMPLATE` OTTR (stOTTR) templates
+- [ ] `dhd.py`: readers + maplib graph builder (DT full, VT SNOMED-only),
+      explicit `FORMAT_VERSION = "uitleverformaat4.3"` constant + tests
+- [ ] `tests/vocabulary/fixtures/dhd/`: tiny synthetic uitleverformaat4.3 CSVs
+      for DT and VT
 - [ ] `cli.py`: `vocabulary build-dhd-diagnosethesaurus` /
       `build-dhd-verrichtingenthesaurus` commands, folded into `merge`
 - [ ] `justfile`: recipes folded into `vocab-build`/`build-all`
-- [ ] `docs/vocabularies/` provenance entry (licence: DHD/Mijn DHD terms)
+- [ ] `docs/vocabularies/` provenance entry (licence: DHD/Mijn DHD terms;
+      note the pinned uitleverformaat4.3 releases: DT 3.44, VT 2.43)
 - [ ] `just check` (lint + ty + pytest) green
 
 ---
@@ -278,5 +349,5 @@ CLI). Resolution:
   `docling` releases; this range is the newest available within the
   cutoff window that resolves cleanly against the forked `docling-core`).
 - This is dev-only tooling (spec review), not a runtime dependency of the
-  `dhd.py` ingestion pipeline itself, which only needs `polars` + `rdflib`
-  (already project dependencies).
+  `dhd.py` ingestion pipeline itself, which only needs `polars` + `maplib`
+  (already project dependencies, see §5).
