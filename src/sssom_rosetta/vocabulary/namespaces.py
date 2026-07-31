@@ -11,6 +11,9 @@ IRI schemes (see the plan's namespace-decisions table):
     rxnorm       http://purl.bioontology.org/ontology/RXNORM/    RxNorm RXCUIs
     icd10        http://hl7.org/fhir/sid/icd-10/                 WHO ICD-10 codes
     icd10cm      http://hl7.org/fhir/sid/icd-10-cm/              ICD-10-CM codes
+    dhddt        https://w3id.org/dhd/diagnosethesaurus/concept/       DHD Diagnosethesaurus ConceptID
+    dhdvt        https://w3id.org/dhd/verrichtingenthesaurus/concept/  DHD Verrichtingenthesaurus ConceptID
+    dbc          https://w3id.org/dhd/dbc/                             DHD/NZa DBC diagnosis codes
 """
 
 from __future__ import annotations
@@ -25,6 +28,9 @@ LOINC = Namespace("https://loinc.org/")
 RXNORM = Namespace("http://purl.bioontology.org/ontology/RXNORM/")
 ICD10 = Namespace("http://hl7.org/fhir/sid/icd-10/")
 ICD10CM = Namespace("http://hl7.org/fhir/sid/icd-10-cm/")
+DHD_DIAGNOSETHESAURUS = Namespace("https://w3id.org/dhd/diagnosethesaurus/concept/")
+DHD_VERRICHTINGENTHESAURUS = Namespace("https://w3id.org/dhd/verrichtingenthesaurus/concept/")
+DBC = Namespace("https://w3id.org/dhd/dbc/")
 
 #: CURIE prefix -> namespace, bound on every graph produced by this package.
 PREFIX_MAP: dict[str, Namespace] = {
@@ -34,6 +40,9 @@ PREFIX_MAP: dict[str, Namespace] = {
     "rxnorm": RXNORM,
     "icd10": ICD10,
     "icd10cm": ICD10CM,
+    "dhddt": DHD_DIAGNOSETHESAURUS,
+    "dhdvt": DHD_VERRICHTINGENTHESAURUS,
+    "dbc": DBC,
 }
 
 #: OMOP ``vocabulary_id`` -> the namespace its native ``concept_code`` lives in.
@@ -54,6 +63,23 @@ TARGET_VOCABULARIES: frozenset[str] = frozenset({"SNOMED", "LOINC", "RxNorm", "R
 def sct_iri(sctid: str) -> URIRef:
     """Return the SNOMED CT IRI for an SCTID string."""
     return SCT[sctid]
+
+
+def dhd_concept_iri(thesaurus: str, concept_id: str) -> URIRef:
+    """Return the DHD concept IRI for a ``ConceptID``, in the ``thesaurus``-specific namespace.
+
+    ``thesaurus`` is ``"dt"`` (Diagnosethesaurus) or ``"vt"``
+    (Verrichtingenthesaurus) -- kept as separate namespaces since a DT and a
+    VT ``ConceptID`` could coincidentally collide as strings (see the plan's
+    §3 namespace-decisions table).
+    """
+    namespace = DHD_DIAGNOSETHESAURUS if thesaurus == "dt" else DHD_VERRICHTINGENTHESAURUS
+    return namespace[concept_id]
+
+
+def dbc_iri(dbc_id: str) -> URIRef:
+    """Return the DBC diagnosis-code IRI for a ``DBC_ID`` string."""
+    return DBC[dbc_id]
 
 
 def omop_iri(concept_id: str) -> URIRef:

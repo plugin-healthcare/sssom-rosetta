@@ -51,7 +51,7 @@ from sssom_rosetta.ontology.sources import (
     UnknownOntologySourceError,
     get_source,
 )
-from sssom_rosetta.vocabulary import loinc_snomed, merge, omop, snomed_international
+from sssom_rosetta.vocabulary import dhd, loinc_snomed, merge, omop, snomed_international
 from sssom_rosetta.vocabulary.fetch import (
     DEFAULT_CACHE_DIR as VOCAB_CACHE_DIR,
 )
@@ -77,7 +77,10 @@ mapping_app = typer.Typer(help="Author, validate, and build SSSOM mapping sets."
 docs_app = typer.Typer(help="Generate the Zensical docs site's generated pages.")
 protege_app = typer.Typer(help="Build a combined ontologies + mappings OWL file for exploring in Protege.")
 vocabulary_app = typer.Typer(
-    help="Ingest large terminology releases (LOINC-SNOMED RF2, OMOP/Athena) and build a merged vocabulary Turtle graph."
+    help=(
+        "Ingest large terminology releases (LOINC-SNOMED RF2, OMOP/Athena, DHD thesauri) "
+        "and build a merged vocabulary Turtle graph."
+    )
 )
 gephi_app = typer.Typer(help="Export the combined ontology or vocabulary graph as GEXF for Gephi.")
 app.add_typer(ontology_app, name="ontology")
@@ -551,7 +554,7 @@ DEFAULT_VOCAB_OUTPUT_DIR = Path("build/vocabularies")
 def vocabulary_ingest(
     name: Annotated[
         str,
-        typer.Argument(help="Registry key: 'loinc-snomed', 'snomed-international' or 'omop'."),
+        typer.Argument(help="Registry key: 'loinc-snomed', 'snomed-international', 'omop' or 'dhd-thesauri'."),
     ],
     zip_path: Annotated[
         Path,
@@ -649,6 +652,58 @@ def vocabulary_build_omop(
     typer.echo(str(output_path))
 
 
+@vocabulary_app.command("build-dhd-diagnosethesaurus")
+def vocabulary_build_dhd_diagnosethesaurus(
+    output_dir: Annotated[
+        Path, typer.Option(help="Directory the Turtle graph is written to.")
+    ] = DEFAULT_VOCAB_OUTPUT_DIR,
+    cache_dir: Annotated[Path, typer.Option(help="Base directory releases are extracted under.")] = VOCAB_CACHE_DIR,
+) -> None:
+    """Build ``dhd-diagnosethesaurus.ttl`` from the ingested DHD thesauri release (DT, uitleverformaat4.3)."""
+    source = get_vocabulary_source("dhd-thesauri")
+    release_dir = cache_dir_for(source, cache_dir)
+    if not release_dir.is_dir():
+        typer.echo(
+            f"Error: no ingested release at {release_dir}. Run 'rosetta vocabulary ingest dhd-thesauri <zip>' first.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    try:
+        graph = dhd.build_from_release(release_dir, "dt")
+    except dhd.DhdFormatVersionError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    output_path = dhd.write_ttl(graph, output_dir / "dhd-diagnosethesaurus.ttl")
+    typer.echo(str(output_path))
+
+
+@vocabulary_app.command("build-dhd-verrichtingenthesaurus")
+def vocabulary_build_dhd_verrichtingenthesaurus(
+    output_dir: Annotated[
+        Path, typer.Option(help="Directory the Turtle graph is written to.")
+    ] = DEFAULT_VOCAB_OUTPUT_DIR,
+    cache_dir: Annotated[Path, typer.Option(help="Base directory releases are extracted under.")] = VOCAB_CACHE_DIR,
+) -> None:
+    """Build ``dhd-verrichtingenthesaurus.ttl`` from the ingested DHD thesauri release (VT, uitleverformaat4.3)."""
+    source = get_vocabulary_source("dhd-thesauri")
+    release_dir = cache_dir_for(source, cache_dir)
+    if not release_dir.is_dir():
+        typer.echo(
+            f"Error: no ingested release at {release_dir}. Run 'rosetta vocabulary ingest dhd-thesauri <zip>' first.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    try:
+        graph = dhd.build_from_release(release_dir, "vt")
+    except dhd.DhdFormatVersionError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    output_path = dhd.write_ttl(graph, output_dir / "dhd-verrichtingenthesaurus.ttl")
+    typer.echo(str(output_path))
+
+
 @vocabulary_app.command("merge")
 def vocabulary_merge(
     output_dir: Annotated[
@@ -657,24 +712,29 @@ def vocabulary_merge(
 ) -> None:
     """Merge the vocabulary graphs into ``rosetta-vocabularies.ttl``.
 
-    Combines whichever of ``omop.ttl``, ``snomed-international.ttl`` and
-    ``loinc-snomed.ttl`` are present. OMOP is the base layer and is normally the
-    only input; the native SNOMED/LOINC RF2 graphs are optional (deferred
-    OWL-DL follow-up). Because all mint identical ``sct:`` IRIs, when the
-    optional graphs are present the OMOP concept_ids and any native concepts
-    attach to each other automatically once unioned.
+    Combines whichever of ``omop.ttl``, ``snomed-international.ttl``,
+    ``loinc-snomed.ttl``, ``dhd-diagnosethesaurus.ttl`` and
+    ``dhd-verrichtingenthesaurus.ttl`` are present. OMOP is the base layer and
+    is normally the only input; the native SNOMED/LOINC RF2 graphs and the DHD
+    thesauri are optional additions. Because all mint identical ``sct:`` IRIs,
+    when the optional graphs are present the OMOP concept_ids, any native
+    concepts, and the DHD DT/VT concepts attach to each other automatically
+    once unioned.
     """
     candidates = [
         output_dir / "omop.ttl",
         output_dir / "snomed-international.ttl",
         output_dir / "loinc-snomed.ttl",
+        output_dir / "dhd-diagnosethesaurus.ttl",
+        output_dir / "dhd-verrichtingenthesaurus.ttl",
     ]
     inputs = [path for path in candidates if path.exists()]
     if not inputs:
         typer.echo(
             "Error: no input graphs found to merge. Run 'build-omop' "
             "(and optionally 'build-snomed-international' / "
-            "'build-loinc-snomed') first.",
+            "'build-loinc-snomed' / 'build-dhd-diagnosethesaurus' / "
+            "'build-dhd-verrichtingenthesaurus') first.",
             err=True,
         )
         raise typer.Exit(1)

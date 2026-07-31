@@ -65,3 +65,57 @@ def language_tagged_column(values: pl.Series, language: str = "en") -> pl.Series
         .select(pl.struct([pl.col("v").alias(LANG_STRING_FIELD), pl.col("l")]).alias("x"))
         .to_series()
     )
+
+
+#: IRI of the DHD concept template below, passed to ``Model.map``.
+DHD_CONCEPT_TEMPLATE_IRI = "http://www.w3.org/2004/02/skos/core#DhdConceptTemplate"
+
+#: Maps one DHD ``ThesaurusConcept`` row (already joined to its active FSN
+#: term, see ``dhd.py``) to a SKOS concept node:
+#:
+#: * ``subject`` (required) -- the ``dhddt:``/``dhdvt:`` concept IRI.
+#: * ``snomed`` (optional) -- the ``sct:`` IRI of the concept's SNOMED CT
+#:   FSN term -> ``skos:exactMatch``. Left unbound (null) when the concept
+#:   has no active SNOMED mapping, so no triple is emitted for that row --
+#:   the same optional-drop mechanism as :data:`CONCEPT_TEMPLATE`'s ``label``.
+#:
+#: Used for both DT and VT: VT rows simply never carry an
+#: ``AfleidingICD10``/``AfleidingDBC``-derived match (see
+#: :data:`DHD_CLOSE_MATCH_TEMPLATE`, which is DT-only).
+DHD_CONCEPT_TEMPLATE = """
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix ottr: <http://ns.ottr.xyz/0.4/> .
+
+skos:DhdConceptTemplate [
+    ?subject,
+    ? ?snomed
+] :: {
+    ottr:Triple(?subject, rdf:type, skos:Concept),
+    ottr:Triple(?subject, skos:exactMatch, ?snomed)
+} .
+"""
+
+#: IRI of the DHD close-match template below, passed to ``Model.map``.
+DHD_CLOSE_MATCH_TEMPLATE_IRI = "http://www.w3.org/2004/02/skos/core#DhdCloseMatchTemplate"
+
+#: Maps a plain ``(subject, object)`` row to a ``skos:closeMatch`` triple.
+#: Both parameters are required (unlike :data:`DHD_CONCEPT_TEMPLATE`'s
+#: ``snomed``): the DT-only ``AfleidingICD10``/``AfleidingDBC`` derivations
+#: are pre-filtered to non-blank rows before mapping (see ``dhd.py``'s
+#: ``load_icd10``/``load_dbc``), so every row here always has both an
+#: ``ICD10``/``DBC_ID`` value. Reused for both the ``icd10:`` and ``dbc:``
+#: cross-links -- these are administrative/classification derivations, not
+#: asserted subsumption relationships, hence ``closeMatch`` rather than
+#: ``broadMatch``/``narrowMatch`` (see the plan's §2 mapping-semantics table).
+DHD_CLOSE_MATCH_TEMPLATE = """
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix ottr: <http://ns.ottr.xyz/0.4/> .
+
+skos:DhdCloseMatchTemplate [
+    ?subject,
+    ?object
+] :: {
+    ottr:Triple(?subject, skos:closeMatch, ?object)
+} .
+"""
