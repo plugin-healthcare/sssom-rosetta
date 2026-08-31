@@ -16,6 +16,8 @@ import zipfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from sssom_rosetta.vocabulary.errors import VocabularyError
+
 if TYPE_CHECKING:
     from sssom_rosetta.vocabulary.sources import VocabularySource
 
@@ -24,11 +26,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_CACHE_DIR = Path("data/vocabularies")
 
 
-class VocabularyIngestError(Exception):
+class VocabularyIngestError(VocabularyError):
     """Raised when a vocabulary ZIP can't be read or extracted."""
 
 
-class VocabularyChecksumMismatchError(Exception):
+class VocabularyChecksumMismatchError(VocabularyError):
     """Raised when a provided ZIP's checksum doesn't match the registry."""
 
     def __init__(self, source: VocabularySource, actual: str) -> None:

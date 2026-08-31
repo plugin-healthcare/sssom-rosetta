@@ -17,7 +17,7 @@ location differs. International RF2 packages ship ``Full/``, ``Snapshot/`` and
 ``Snapshot/`` English (``-en``) files (see :func:`find_file`'s ``contains``).
 
 Full OWL-DL logical definitions are intentionally not materialised here — see
-``.agents/plan/2026-07-21-owl-dl-classification-deferral-note.md``.
+:doc:`/vocabularies/index` for the rationale.
 """
 
 from __future__ import annotations

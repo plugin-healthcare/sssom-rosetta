@@ -4,8 +4,9 @@ Templates are the declarative counterpart to the ``if row[...]:`` branches a
 hand-written triple-add loop would need: a leading ``?`` on a template
 parameter (e.g. ``? ?label``) marks it *optional*, and maplib silently omits
 any triple that uses an unbound optional variable for a given row, instead of
-requiring Python-side conditionals. See
-``.agents/plan/2026-07-30-implementation-maplib.md`` for the rationale.
+requiring Python-side conditionals. See :doc:`/vocabularies/index` for the
+rationale behind choosing maplib/OTTR templates over a hand-written triple-add
+loop.
 """
 
 from __future__ import annotations
@@ -74,6 +75,9 @@ DHD_CONCEPT_TEMPLATE_IRI = "http://www.w3.org/2004/02/skos/core#DhdConceptTempla
 #: term, see ``dhd.py``) to a SKOS concept node:
 #:
 #: * ``subject`` (required) -- the ``dhddt:``/``dhdvt:`` concept IRI.
+#: * ``label`` (optional) -- the FSN's ``Omschrijving`` as a language-tagged
+#:   literal (``nl`` preferred over ``en`` when both are active) ->
+#:   ``skos:prefLabel``.
 #: * ``snomed`` (optional) -- the ``sct:`` IRI of the concept's SNOMED CT
 #:   FSN term -> ``skos:exactMatch``. Left unbound (null) when the concept
 #:   has no active SNOMED mapping, so no triple is emitted for that row --
@@ -89,9 +93,11 @@ DHD_CONCEPT_TEMPLATE = """
 
 skos:DhdConceptTemplate [
     ?subject,
+    ? ?label,
     ? ?snomed
 ] :: {
     ottr:Triple(?subject, rdf:type, skos:Concept),
+    ottr:Triple(?subject, skos:prefLabel, ?label),
     ottr:Triple(?subject, skos:exactMatch, ?snomed)
 } .
 """
@@ -107,7 +113,8 @@ DHD_CLOSE_MATCH_TEMPLATE_IRI = "http://www.w3.org/2004/02/skos/core#DhdCloseMatc
 #: ``ICD10``/``DBC_ID`` value. Reused for both the ``icd10:`` and ``dbc:``
 #: cross-links -- these are administrative/classification derivations, not
 #: asserted subsumption relationships, hence ``closeMatch`` rather than
-#: ``broadMatch``/``narrowMatch`` (see the plan's §2 mapping-semantics table).
+#: ``broadMatch``/``narrowMatch`` (see :doc:`/vocabularies/index`'s
+#: relationship-to-SKOS mapping table).
 DHD_CLOSE_MATCH_TEMPLATE = """
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @prefix ottr: <http://ns.ottr.xyz/0.4/> .

@@ -25,8 +25,10 @@ by mapping the filtered ``concepts`` DataFrame through the
 and relationship edges are built with ``Model.map_triples`` over a
 subject/predicate/object frame (the ``relationship_id`` -> SKOS predicate
 lookup is a plain column mapping, not a template, since it doesn't need
-OTTR's optional-value semantics). See
-``.agents/plan/2026-07-30-implementation-maplib.md``.
+OTTR's optional-value semantics).
+
+See :doc:`/vocabularies/index` for the rationale behind choosing maplib/OTTR
+over a hand-written rdflib triple-add loop.
 """
 
 from __future__ import annotations

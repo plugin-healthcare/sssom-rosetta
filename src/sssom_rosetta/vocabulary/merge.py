@@ -7,10 +7,10 @@ is how an OMOP ``concept_id`` node ends up connected to the LOINC-SNOMED
 ontology hierarchy.
 
 ``omop.build_graph`` returns a ``maplib.Model`` while ``loinc_snomed`` and
-``snomed_international`` still build ``rdflib.Graph`` (see
-``.agents/plan/2026-07-30-implementation-maplib.md`` -- only OMOP's
-construction step moved to maplib). :func:`merge_graphs` accepts either kind
-of graph object and normalises both to rdflib triples before merging.
+``snomed_international`` still build ``rdflib.Graph`` (only OMOP's
+construction step moved to maplib; see :doc:`/vocabularies/index` for why).
+:func:`merge_graphs` accepts either kind of graph object and normalises both
+to rdflib triples before merging.
 """
 
 from __future__ import annotations

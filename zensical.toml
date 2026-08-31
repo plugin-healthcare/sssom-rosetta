@@ -9,6 +9,10 @@ nav = [
      "ontologies/omop-cdm.md"
   ]},
   {"Mappings" = [
+     "mappings/authoring.md",
      "mappings/omop-onz-g.md"
+  ]},
+  {"Vocabularies" = [
+     "vocabularies/index.md"
   ]}
 ]

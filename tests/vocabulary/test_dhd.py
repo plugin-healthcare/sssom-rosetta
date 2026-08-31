@@ -7,7 +7,7 @@ since ``dhd.build_graph`` also returns a ``maplib.Model`` rather than an
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import polars as pl
 import pytest
@@ -16,13 +16,11 @@ from sssom_rosetta.vocabulary import dhd
 from sssom_rosetta.vocabulary.namespaces import ICD10 as ICD10_NS
 from sssom_rosetta.vocabulary.namespaces import dbc_iri, dhd_concept_iri, sct_iri
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
 AS_OF = "20250101"
 
 RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 SKOS_CONCEPT = "http://www.w3.org/2004/02/skos/core#Concept"
+PREF_LABEL = "http://www.w3.org/2004/02/skos/core#prefLabel"
 EXACT_MATCH = "http://www.w3.org/2004/02/skos/core#exactMatch"
 CLOSE_MATCH = "http://www.w3.org/2004/02/skos/core#closeMatch"
 
@@ -44,6 +42,18 @@ def iris(model, subject: str, predicate: str) -> list[str]:
 def _write_csv(path: Path, rows: list[str], header: str) -> Path:
     path.write_text(header + "\n" + "\n".join(rows) + "\n")
     return path
+
+
+def test_load_concepts_raises_on_missing_column(tmp_path: Path) -> None:
+    """A header change upstream (e.g. ``Einddatum`` renamed/removed) must fail loudly."""
+    csv_path = _write_csv(
+        tmp_path / "ThesaurusConcept.csv",
+        rows=['"0000000001","Diagnose","false","false","niet bepaald","false","20000101","20200101"'],
+        header='"ConceptID","TypeConcept","Complicatie","GebruiktImplantaat","Lateraliteit","Gradatie",'
+        '"Begindatum","Mutatiedatum"',
+    )
+    with pytest.raises(dhd.DhdSchemaError, match="Einddatum"):
+        dhd.load_concepts(csv_path, AS_OF)
 
 
 def test_load_concepts_filters_to_active(tmp_path: Path) -> None:
@@ -109,30 +119,63 @@ def test_load_dbc_excludes_blank_dbc_id(tmp_path: Path) -> None:
         '"Logica","Begindatum","Mutatiedatum","Einddatum","AutorisatieBegindatum","AutorisatieEinddatum"',
     )
     dbc = dhd.load_dbc(csv_path, AS_OF)
-    assert dbc.rows() == [("0000000001", "130")]
+    assert dbc.rows() == [("0000000001", "0389-130")]
+
+
+def test_load_dbc_disambiguates_by_specialisme_code(tmp_path: Path) -> None:
+    """A DBC_ID is only unique combined with its specialism code (see PR #3 review)."""
+    csv_path = _write_csv(
+        tmp_path / "AfleidingDBC.csv",
+        rows=[
+            '"0000000003","3308","411","3308","1","","","20000101","20231117","20991231","20150501","20991231"',
+            # Same DBC_ID (411) under a different specialism -> a distinct code.
+            '"0000000003","0389","411","0389","1","","","20000101","20231117","20991231","20150501","20991231"',
+        ],
+        header='"ConceptID","SpecialismeCode","DBC_ID","Registrerend_SpecialismeCode","Volgnummer","Advies",'
+        '"Logica","Begindatum","Mutatiedatum","Einddatum","AutorisatieBegindatum","AutorisatieEinddatum"',
+    )
+    dbc = dhd.load_dbc(csv_path, AS_OF)
+    assert sorted(dbc["DBC_ID"].to_list()) == ["0389-411", "3308-411"]
+
+
+def test_active_treats_blank_einddatum_as_still_valid(tmp_path: Path) -> None:
+    """A blank ``Einddatum`` means no known end date, common for active codes (see PR #3 review)."""
+    csv_path = _write_csv(
+        tmp_path / "ThesaurusConcept.csv",
+        rows=[
+            '"0000000001","Diagnose","false","false","niet bepaald","false","20000101","20200101","",""',
+        ],
+        header='"ConceptID","TypeConcept","Complicatie","GebruiktImplantaat","Lateraliteit","Gradatie",'
+        '"Begindatum","Mutatiedatum","Einddatum","LOINCCode"',
+    )
+    concepts = dhd.load_concepts(csv_path, AS_OF)
+    assert concepts["ConceptID"].to_list() == ["0000000001"]
 
 
 # --- build_graph ---------------------------------------------------------------
 
 
-CONCEPTS = pl.DataFrame({"ConceptID": ["1", "2"], "TypeConcept": ["Diagnose", "Diagnose"]})
+CONCEPTS = pl.DataFrame({"ConceptID": ["1", "2"]})
 SNOMED_TERMS = pl.DataFrame({"ConceptID": ["1"], "SnomedID": ["44054006"]})
+LABELS = pl.DataFrame({"ConceptID": ["1"], "Omschrijving": ["cyste"], "Language": ["nl"]})
 ICD10_ROWS = pl.DataFrame({"ConceptID": ["1"], "ICD10": ["G52.3"]})
-DBC_ROWS = pl.DataFrame({"ConceptID": ["1"], "DBC_ID": ["130"]})
+DBC_ROWS = pl.DataFrame({"ConceptID": ["1"], "DBC_ID": ["0389-130"]})
 
 
 def test_build_graph_dt_concept_and_crosslinks() -> None:
-    model = dhd.build_graph("dt", CONCEPTS, SNOMED_TERMS, ICD10_ROWS, DBC_ROWS)
+    model = dhd.build_graph("dt", CONCEPTS, SNOMED_TERMS, LABELS, dhd.DhdCrossLinks(icd10=ICD10_ROWS, dbc=DBC_ROWS))
 
     node1 = str(dhd_concept_iri("dt", "1"))
     node2 = str(dhd_concept_iri("dt", "2"))
 
     assert iris(model, node1, RDF_TYPE) == [SKOS_CONCEPT]
+    assert objects(model, node1, PREF_LABEL) == ['"cyste"@nl']
     assert iris(model, node1, EXACT_MATCH) == [str(sct_iri("44054006"))]
-    assert sorted(iris(model, node1, CLOSE_MATCH)) == sorted([str(ICD10_NS["G52.3"]), str(dbc_iri("130"))])
+    assert sorted(iris(model, node1, CLOSE_MATCH)) == sorted([str(ICD10_NS["G52.3"]), str(dbc_iri("0389-130"))])
 
-    # Concept with no SNOMED/ICD10/DBC match: typed, but no exactMatch/closeMatch triples.
+    # Concept with no SNOMED/ICD10/DBC/label match: typed, but no prefLabel/exactMatch/closeMatch triples.
     assert iris(model, node2, RDF_TYPE) == [SKOS_CONCEPT]
+    assert objects(model, node2, PREF_LABEL) == []
     assert objects(model, node2, EXACT_MATCH) == []
     assert objects(model, node2, CLOSE_MATCH) == []
 
@@ -205,13 +248,38 @@ def test_build_from_release_dt_and_vt(tmp_path: Path) -> None:
 
     dt_model = dhd.build_from_release(tmp_path, "dt", as_of=AS_OF)
     node = str(dhd_concept_iri("dt", "0000000001"))
+    assert objects(dt_model, node, PREF_LABEL) == ['"cyst (disorder)"@en']
     assert iris(dt_model, node, EXACT_MATCH) == [str(sct_iri("39462005"))]
-    assert sorted(iris(dt_model, node, CLOSE_MATCH)) == sorted([str(ICD10_NS["G52.3"]), str(dbc_iri("130"))])
+    assert sorted(iris(dt_model, node, CLOSE_MATCH)) == sorted([str(ICD10_NS["G52.3"]), str(dbc_iri("0389-130"))])
 
     vt_model = dhd.build_from_release(tmp_path, "vt", as_of=AS_OF)
     vt_node = str(dhd_concept_iri("vt", "0000000001"))
+    assert objects(vt_model, vt_node, PREF_LABEL) == ['"cyst (disorder)"@en']
     assert iris(vt_model, vt_node, EXACT_MATCH) == [str(sct_iri("39462005"))]
     assert objects(vt_model, vt_node, CLOSE_MATCH) == []
+
+
+def test_load_labels_prefers_dutch_over_english(tmp_path: Path) -> None:
+    header = (
+        '"ConceptID","TermID","Omschrijving","Begindatum","Mutatiedatum","Einddatum","TaalCode","TypeTerm","SnomedID"'
+    )
+    path = tmp_path / f"20250101_000000_{dhd.FORMAT_VERSION}_ThesaurusTerm.csv"
+    _write_csv(
+        path,
+        [
+            '"1","1","cyst (disorder)","20000101","20020131","20991231","en-GB","FSN","39462005"',
+            '"1","2","cyste","20000101","20020131","20991231","nl-NL","FSN","39462005"',
+            '"2","3","fracture (disorder)","20000101","20020131","20991231","en-GB","FSN","12345"',
+        ],
+        header,
+    )
+
+    labels = dhd.load_labels(path, AS_OF)
+
+    assert labels.sort("ConceptID").to_dicts() == [
+        {"ConceptID": "1", "Omschrijving": "cyste", "Language": "nl"},
+        {"ConceptID": "2", "Omschrijving": "fracture (disorder)", "Language": "en"},
+    ]
 
 
 def test_find_release_dir_missing_raises(tmp_path: Path) -> None:

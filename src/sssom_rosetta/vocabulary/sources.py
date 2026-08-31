@@ -10,10 +10,12 @@ recording its checksum for reproducibility.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from pydantic import BaseModel, ConfigDict
+
+from sssom_rosetta.vocabulary.errors import VocabularyError
 
 
-class UnknownVocabularySourceError(KeyError):
+class UnknownVocabularySourceError(VocabularyError, KeyError):
     """Raised when a requested vocabulary source is not in the registry."""
 
     def __init__(self, name: str) -> None:
@@ -22,9 +24,13 @@ class UnknownVocabularySourceError(KeyError):
         super().__init__(f"Unknown vocabulary source {name!r}. Known sources: {known}")
 
 
-@dataclass(frozen=True)
-class VocabularySource:
+class VocabularySource(BaseModel):
     """A pinned, licence-gated vocabulary release ingested from a local ZIP.
+
+    A frozen (immutable) pydantic model rather than a plain dataclass, so the
+    registry below gets field-level validation for free (e.g. a future YAML
+    loader for this registry can call ``VocabularySource.model_validate`` on
+    parsed YAML directly, instead of hand-rolling a validator).
 
     Attributes:
         name: Short registry key, e.g. ``"loinc-snomed"`` or ``"omop"``.
@@ -41,6 +47,8 @@ class VocabularySource:
             one and it's distinct from ``version`` (the pinned release/content
             version). ``None`` for sources without a separate format version.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     name: str
     version: str

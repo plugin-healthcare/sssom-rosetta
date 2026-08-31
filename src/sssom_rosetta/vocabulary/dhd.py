@@ -2,11 +2,8 @@
 
 DHD ("Dutch Hospital Data") publishes the Diagnosethesaurus (DT) and
 Verrichtingenthesaurus (VT) as CSV bundles in a versioned "uitleverformaat"
-(delivery format). This module targets **uitleverformaat4.3 only** -- see
-:data:`FORMAT_VERSION` and the plan
-(``.agents/plan/2026-07-28-dhd-thesauri-omop-integration.md``) for why this is
-pinned explicitly rather than inferred: the reviewed spec PDF describes a
-different, 5.0 file layout that this module does not parse.
+(delivery format). This module targets **uitleverformaat4.3 only**, asserted
+via :data:`FORMAT_VERSION`.
 
 Unlike RF2/Athena, DHD uitleverformaat4.3 files are **comma-separated with
 quoted fields** (``quote_char='"'``); all columns are read as ``Utf8`` since
@@ -16,66 +13,110 @@ strings that must not be reinterpreted as integers.
 DHD rows carry their own ``Begindatum``/``Einddatum`` validity window
 (``YYYYMMDD``, fixed-width, so plain string comparison sorts correctly without
 parsing to ``pl.Date``). :func:`_active` filters each table independently to
-the rows valid on a single as-of date, per the plan's temporal-validity
-simplification (no reified validity intervals in this increment).
+the rows valid on a single as-of date.
 
 As with ``omop.py``, graphs are assembled with **maplib**, not ``rdflib``:
 :data:`~sssom_rosetta.vocabulary.templates.DHD_CONCEPT_TEMPLATE` and
 :data:`~sssom_rosetta.vocabulary.templates.DHD_CLOSE_MATCH_TEMPLATE` are
 declarative OTTR (stOTTR) templates mapped over polars DataFrames via
-``Model.map`` -- see
-``.agents/plan/2026-07-30-implementation-maplib.md`` for the rationale.
+``Model.map``.
+
+See :doc:`/vocabularies/index` for the rationale behind the uitleverformaat4.3
+pin, the temporal-validity simplification, and the maplib/OTTR choice.
 """
 
 from __future__ import annotations
 
 from datetime import date
-from typing import TYPE_CHECKING, Literal
+from pathlib import Path
+from typing import Literal, NamedTuple
 
 import polars as pl
 from maplib import Model
 
+from sssom_rosetta.vocabulary.errors import VocabularyError
+from sssom_rosetta.vocabulary.fetch import VocabularyIngestError, find_file
 from sssom_rosetta.vocabulary.namespaces import (
     DBC,
-    DHD_DIAGNOSETHESAURUS,
-    DHD_VERRICHTINGENTHESAURUS,
     ICD10,
     PREFIX_MAP,
     SCT,
+    THESAURUS_NAMESPACES,
 )
+from sssom_rosetta.vocabulary.sources import VOCABULARY_SOURCES
 from sssom_rosetta.vocabulary.templates import (
     DHD_CLOSE_MATCH_TEMPLATE,
     DHD_CLOSE_MATCH_TEMPLATE_IRI,
     DHD_CONCEPT_TEMPLATE,
     DHD_CONCEPT_TEMPLATE_IRI,
+    LANG_STRING_FIELD,
 )
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 Thesaurus = Literal["dt", "vt"]
 
-#: The DHD delivery-format version this module parses. Asserted (not just
-#: documented) in :func:`build_from_release` so a release in a differently
-#: shaped format (e.g. a future ``uitleverformaat5.0``) fails fast instead of
-#: silently mis-parsing columns that moved between spec versions.
-FORMAT_VERSION = "uitleverformaat4.3"
+#: The DHD delivery-format version this module parses, read from the single
+#: source of truth in :data:`~sssom_rosetta.vocabulary.sources.VOCABULARY_SOURCES`
+#: so the two never drift apart. Asserted (not just documented) in
+#: :func:`build_from_release` so a release in a differently shaped format
+#: (e.g. a future ``uitleverformaat5.0``) fails fast instead of silently
+#: mis-parsing columns that moved between spec versions.
+_DHD_FORMAT_VERSION = VOCABULARY_SOURCES["dhd-thesauri"].format_version
+if _DHD_FORMAT_VERSION is None:
+    msg = "The 'dhd-thesauri' vocabulary source is missing its format_version."
+    raise RuntimeError(msg)
+FORMAT_VERSION: str = _DHD_FORMAT_VERSION
 
 _SKOS = "http://www.w3.org/2004/02/skos/core#"
 
 #: Prefixes bound on the produced model, purely for readable Turtle output.
 _PREFIXES = {prefix: str(namespace) for prefix, namespace in PREFIX_MAP.items()} | {"skos": _SKOS}
 
-_THESAURUS_NAMESPACE = {"dt": DHD_DIAGNOSETHESAURUS, "vt": DHD_VERRICHTINGENTHESAURUS}
 
-
-class DhdFormatVersionError(Exception):
+class DhdFormatVersionError(VocabularyError):
     """Raised when a release directory doesn't match :data:`FORMAT_VERSION`."""
 
 
-def _scan_dhd(path: Path) -> pl.LazyFrame:
-    """Lazily scan a DHD uitleverformaat4.3 comma-separated CSV as all-``Utf8``."""
-    return pl.scan_csv(path, quote_char='"', infer_schema_length=0)
+class DhdSchemaError(VocabularyError):
+    """Raised when a DHD CSV file is missing an expected column.
+
+    Files are located by filename pattern only (see :func:`_exact_suffix`),
+    so a silent upstream column rename/removal would otherwise surface as a
+    confusing ``ColumnNotFoundError`` deep inside a later transform instead
+    of a clear error at read time.
+    """
+
+
+#: Expected header columns per DHD uitleverformaat4.3 CSV file, keyed by the
+#: filename suffix :func:`_exact_suffix` locates them by. Validated by
+#: :func:`_scan_dhd` so an upstream header change fails fast and loudly.
+_EXPECTED_COLUMNS: dict[str, frozenset[str]] = {
+    "_ThesaurusConcept.csv": frozenset({"ConceptID", "Begindatum", "Einddatum"}),
+    "_ThesaurusTerm.csv": frozenset(
+        {"ConceptID", "Omschrijving", "TaalCode", "TypeTerm", "SnomedID", "Begindatum", "Einddatum"}
+    ),
+    "_AfleidingICD10.csv": frozenset({"ConceptID", "ICD10", "Begindatum", "Einddatum"}),
+    "_AfleidingDBC.csv": frozenset({"ConceptID", "SpecialismeCode", "DBC_ID", "Begindatum", "Einddatum"}),
+}
+
+
+def _scan_dhd(path: Path, *, suffix: str) -> pl.LazyFrame:
+    """Lazily scan a DHD uitleverformaat4.3 comma-separated CSV as all-``Utf8``.
+
+    Validates the header against :data:`_EXPECTED_COLUMNS` for ``suffix``
+    (e.g. ``"_ThesaurusConcept.csv"``) before returning, so a missing column
+    -- an upstream format change DHD didn't flag by version -- is caught here
+    rather than downstream.
+
+    Raises:
+        DhdSchemaError: If any expected column is missing from ``path``'s header.
+    """
+    frame = pl.scan_csv(path, quote_char='"', infer_schema_length=0)
+    expected = _EXPECTED_COLUMNS[suffix]
+    missing = expected - set(frame.collect_schema().names())
+    if missing:
+        msg = f"{path} is missing expected column(s) {sorted(missing)} for a {suffix!r} file."
+        raise DhdSchemaError(msg)
+    return frame
 
 
 def _non_blank(column: str) -> pl.Expr:
@@ -88,20 +129,29 @@ def _active(frame: pl.LazyFrame, as_of: str) -> pl.LazyFrame:
 
     ``Begindatum``/``Einddatum`` are fixed-width ``YYYYMMDD`` strings, so a
     plain lexicographic string comparison sorts identically to a numeric/date
-    comparison -- no need to parse them to ``pl.Date``.
+    comparison -- no need to parse them to ``pl.Date``. A blank/null
+    ``Einddatum`` means the row has no known end date (common for currently
+    active codes), so it is treated as still valid rather than excluded.
     """
-    return frame.filter((pl.col("Begindatum") <= as_of) & (pl.col("Einddatum") >= as_of))
+    einddatum = _non_blank("Einddatum")
+    return frame.filter((pl.col("Begindatum") <= as_of) & (einddatum.is_null() | (einddatum >= as_of)))
 
 
 def _concept_subject_column(concept_id_column: str, thesaurus: Thesaurus) -> pl.Expr:
     """Vectorised ``dhddt:<id>``/``dhdvt:<id>`` IRI expression for a ConceptID column."""
-    namespace = _THESAURUS_NAMESPACE[thesaurus]
-    return pl.concat_str([pl.lit(str(namespace)), pl.col(concept_id_column)])
+    namespace = THESAURUS_NAMESPACES[thesaurus]
+    return pl.concat_str([pl.lit(str(namespace)), pl.col(concept_id_column)], separator="")
 
 
 def load_concepts(thesaurus_concept_csv: Path, as_of: str) -> pl.DataFrame:
-    """Read ``ThesaurusConcept.csv``, keep only rows active on ``as_of``."""
-    return _active(_scan_dhd(thesaurus_concept_csv), as_of).select("ConceptID", "TypeConcept").collect()
+    """Read ``ThesaurusConcept.csv``, keep only rows active on ``as_of``.
+
+    Only ``ConceptID`` is kept: ``TypeConcept`` is not used anywhere in the
+    graph this module builds.
+    """
+    return (
+        _active(_scan_dhd(thesaurus_concept_csv, suffix="_ThesaurusConcept.csv"), as_of).select("ConceptID").collect()
+    )
 
 
 def load_snomed_terms(thesaurus_term_csv: Path, as_of: str) -> pl.DataFrame:
@@ -113,13 +163,38 @@ def load_snomed_terms(thesaurus_term_csv: Path, as_of: str) -> pl.DataFrame:
     SnomedID, hence the final ``.unique()``).
     """
     return (
-        _active(_scan_dhd(thesaurus_term_csv), as_of)
+        _active(_scan_dhd(thesaurus_term_csv, suffix="_ThesaurusTerm.csv"), as_of)
         .filter(pl.col("TypeTerm") == "FSN")
         .with_columns(SnomedID=_non_blank("SnomedID"))
         .filter(pl.col("SnomedID").is_not_null())
         .select("ConceptID", "SnomedID")
         .unique()
         .collect()
+    )
+
+
+def load_labels(thesaurus_term_csv: Path, as_of: str) -> pl.DataFrame:
+    """Return one active ``(ConceptID, Omschrijving, Language)`` preferred-label row per concept.
+
+    Uses the FSN term's ``Omschrijving`` as the concept's ``skos:prefLabel``
+    text, tagged with a two-letter ``Language`` derived from ``TaalCode``
+    (e.g. ``"nl-NL"`` -> ``"nl"``). When both an English (``en-GB``) and
+    Dutch (``nl-NL``) FSN are concurrently active for a concept, the Dutch
+    one is preferred, since the produced graph targets a Dutch-healthcare
+    audience.
+    """
+    return (
+        _active(_scan_dhd(thesaurus_term_csv, suffix="_ThesaurusTerm.csv"), as_of)
+        .filter(pl.col("TypeTerm") == "FSN")
+        .with_columns(Omschrijving=_non_blank("Omschrijving"))
+        .filter(pl.col("Omschrijving").is_not_null())
+        .select("ConceptID", "Omschrijving", "TaalCode")
+        .collect()
+        .sort("TaalCode")  # "en-GB" sorts before "nl-NL"
+        .group_by("ConceptID", maintain_order=True)
+        .agg(pl.col("Omschrijving").last(), pl.col("TaalCode").last())  # last -> nl-NL when present
+        .with_columns(Language=pl.col("TaalCode").str.slice(0, 2).str.to_lowercase())
+        .drop("TaalCode")
     )
 
 
@@ -130,7 +205,7 @@ def load_icd10(afleiding_icd10_csv: Path, as_of: str) -> pl.DataFrame:
     candidates are all kept, not just the default/first one).
     """
     return (
-        _active(_scan_dhd(afleiding_icd10_csv), as_of)
+        _active(_scan_dhd(afleiding_icd10_csv, suffix="_AfleidingICD10.csv"), as_of)
         .with_columns(ICD10=_non_blank("ICD10"))
         .filter(pl.col("ICD10").is_not_null())
         .select("ConceptID", "ICD10")
@@ -141,30 +216,43 @@ def load_icd10(afleiding_icd10_csv: Path, as_of: str) -> pl.DataFrame:
 def load_dbc(afleiding_dbc_csv: Path, as_of: str) -> pl.DataFrame:
     """Return active ``(ConceptID, DBC_ID)`` pairs from ``AfleidingDBC.csv`` (DT only).
 
+    A DBC diagnosis code is only unique in combination with its specialism
+    code (``SpecialismeCode``): the same ``DBC_ID`` can be reused across
+    different specialisms. ``DBC_ID`` here is therefore the composite
+    ``f"{SpecialismeCode}-{DBC_ID}"`` string, not the raw ``DBC_ID`` column,
+    so :func:`_close_match_rows` mints a correctly-scoped ``dbc:`` IRI.
     Rows with an empty ``DBC_ID`` (a specialism row with no DBC) are dropped.
     """
     return (
-        _active(_scan_dhd(afleiding_dbc_csv), as_of)
+        _active(_scan_dhd(afleiding_dbc_csv, suffix="_AfleidingDBC.csv"), as_of)
         .with_columns(DBC_ID=_non_blank("DBC_ID"))
         .filter(pl.col("DBC_ID").is_not_null())
-        .select("ConceptID", "DBC_ID")
+        .select(
+            "ConceptID",
+            DBC_ID=pl.concat_str([pl.col("SpecialismeCode"), pl.col("DBC_ID")], separator="-"),
+        )
         .collect()
     )
 
 
-def _concept_rows(concepts: pl.DataFrame, snomed_terms: pl.DataFrame, thesaurus: Thesaurus) -> pl.DataFrame:
+def _concept_rows(
+    concepts: pl.DataFrame, snomed_terms: pl.DataFrame, labels: pl.DataFrame, thesaurus: Thesaurus
+) -> pl.DataFrame:
     """Prepare the concept frame for :data:`DHD_CONCEPT_TEMPLATE`.
 
-    Left-joins concepts to their (optional) active SNOMED FSN term, so
-    concepts without a SNOMED mapping keep a null ``snomed`` column -- the
-    template's optional-parameter handling then drops the ``skos:exactMatch``
-    triple for those rows entirely.
+    Left-joins concepts to their (optional) active SNOMED FSN term and
+    preferred label, so concepts without a match keep a null ``snomed``/
+    ``label`` column -- the template's optional-parameter handling then drops
+    the corresponding triple for those rows entirely.
     """
-    joined = concepts.join(snomed_terms, on="ConceptID", how="left")
+    joined = concepts.join(snomed_terms, on="ConceptID", how="left").join(labels, on="ConceptID", how="left")
     return joined.with_columns(
         subject=_concept_subject_column("ConceptID", thesaurus),
         snomed=pl.when(pl.col("SnomedID").is_not_null())
-        .then(pl.concat_str([pl.lit(str(SCT)), pl.col("SnomedID")]))
+        .then(pl.concat_str([pl.lit(str(SCT)), pl.col("SnomedID")], separator=""))
+        .otherwise(None),
+        label=pl.when(pl.col("Omschrijving").is_not_null())
+        .then(pl.struct([pl.col("Omschrijving").alias(LANG_STRING_FIELD), pl.col("Language").alias("l")]))
         .otherwise(None),
     )
 
@@ -175,21 +263,31 @@ def _close_match_rows(
     """Prepare an ICD10/DBC pair frame for :data:`DHD_CLOSE_MATCH_TEMPLATE`."""
     return pairs.with_columns(
         subject=_concept_subject_column("ConceptID", thesaurus),
-        object=pl.concat_str([pl.lit(str(code_namespace)), pl.col(code_column)]),
+        object=pl.concat_str([pl.lit(str(code_namespace)), pl.col(code_column)], separator=""),
     ).select("subject", "object")
+
+
+class DhdCrossLinks(NamedTuple):
+    """DT-only ICD10/DBC ``skos:closeMatch`` derivation frames, bundled to keep :func:`build_graph`'s arity down.
+
+    Both fields are ``None`` for VT, which has no ICD10/DBC derivations.
+    """
+
+    icd10: pl.DataFrame | None = None
+    dbc: pl.DataFrame | None = None
 
 
 def build_graph(
     thesaurus: Thesaurus,
     concepts: pl.DataFrame,
     snomed_terms: pl.DataFrame,
-    icd10: pl.DataFrame | None = None,
-    dbc: pl.DataFrame | None = None,
+    labels: pl.DataFrame | None = None,
+    cross_links: DhdCrossLinks | None = None,
 ) -> Model:
     """Assemble a DHD SKOS graph (DT or VT) from filtered concept/derivation frames.
 
     Concept nodes are mapped through :data:`DHD_CONCEPT_TEMPLATE`; ICD10/DBC
-    cross-links (DT only -- ``icd10``/``dbc`` are ``None`` for VT) are mapped
+    cross-links (DT only -- ``cross_links`` is ``None`` for VT) are mapped
     through :data:`DHD_CLOSE_MATCH_TEMPLATE`. Returns a maplib ``Model``
     rather than an ``rdflib.Graph``, mirroring ``omop.build_graph``.
     """
@@ -198,13 +296,18 @@ def build_graph(
     model.add_template(DHD_CONCEPT_TEMPLATE)
     model.add_template(DHD_CLOSE_MATCH_TEMPLATE)
 
-    concept_rows = _concept_rows(concepts, snomed_terms, thesaurus)
-    model.map(DHD_CONCEPT_TEMPLATE_IRI, concept_rows.select("subject", "snomed"))
+    if labels is None:
+        labels = pl.DataFrame(
+            schema={"ConceptID": pl.Utf8, "Omschrijving": pl.Utf8, "Language": pl.Utf8},
+        )
+    concept_rows = _concept_rows(concepts, snomed_terms, labels, thesaurus)
+    model.map(DHD_CONCEPT_TEMPLATE_IRI, concept_rows.select("subject", "label", "snomed"))
 
-    if icd10 is not None and icd10.height:
-        model.map(DHD_CLOSE_MATCH_TEMPLATE_IRI, _close_match_rows(icd10, "ICD10", ICD10, thesaurus))
-    if dbc is not None and dbc.height:
-        model.map(DHD_CLOSE_MATCH_TEMPLATE_IRI, _close_match_rows(dbc, "DBC_ID", DBC, thesaurus))
+    if cross_links is not None:
+        if cross_links.icd10 is not None and cross_links.icd10.height:
+            model.map(DHD_CLOSE_MATCH_TEMPLATE_IRI, _close_match_rows(cross_links.icd10, "ICD10", ICD10, thesaurus))
+        if cross_links.dbc is not None and cross_links.dbc.height:
+            model.map(DHD_CLOSE_MATCH_TEMPLATE_IRI, _close_match_rows(cross_links.dbc, "DBC_ID", DBC, thesaurus))
 
     return model
 
@@ -233,12 +336,16 @@ def _find_release_dir(root: Path, thesaurus: Thesaurus) -> Path:
 
 
 def _exact_suffix(root: Path, suffix: str) -> Path:
-    """Find the single file under ``root`` whose name ends with ``suffix``."""
-    matches = [path for path in root.rglob(f"*{suffix}") if path.is_file()]
-    if len(matches) != 1:
-        msg = f"Expected exactly one file ending in {suffix!r} under {root}, found: {sorted(str(m) for m in matches)}"
-        raise DhdFormatVersionError(msg)
-    return matches[0]
+    """Find the single file under ``root`` whose name ends with ``suffix``.
+
+    Thin wrapper over :func:`~sssom_rosetta.vocabulary.fetch.find_file`
+    (already used by ``omop.py``) that re-raises as :class:`DhdFormatVersionError`
+    for consistency with :func:`_find_release_dir`'s error type.
+    """
+    try:
+        return find_file(root, suffix=suffix)
+    except VocabularyIngestError as exc:
+        raise DhdFormatVersionError(str(exc)) from exc
 
 
 def build_from_release(
@@ -262,15 +369,16 @@ def build_from_release(
     term_csv = _exact_suffix(thesaurus_dir, "_ThesaurusTerm.csv")
     concepts = load_concepts(concept_csv, as_of_str)
     snomed_terms = load_snomed_terms(term_csv, as_of_str)
+    labels = load_labels(term_csv, as_of_str)
 
     if thesaurus == "vt":
-        return build_graph(thesaurus, concepts, snomed_terms)
+        return build_graph(thesaurus, concepts, snomed_terms, labels)
 
     icd10_csv = _exact_suffix(thesaurus_dir, "_AfleidingICD10.csv")
     dbc_csv = _exact_suffix(thesaurus_dir, "_AfleidingDBC.csv")
     icd10 = load_icd10(icd10_csv, as_of_str)
     dbc = load_dbc(dbc_csv, as_of_str)
-    return build_graph(thesaurus, concepts, snomed_terms, icd10=icd10, dbc=dbc)
+    return build_graph(thesaurus, concepts, snomed_terms, labels, DhdCrossLinks(icd10=icd10, dbc=dbc))
 
 
 def write_ttl(model: Model, output_path: Path) -> Path:

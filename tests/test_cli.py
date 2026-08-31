@@ -12,7 +12,7 @@ import json
 from typing import TYPE_CHECKING
 
 import networkx as nx
-from rdflib import Graph
+from rdflib import RDF, SKOS, Graph, URIRef
 from typer.testing import CliRunner
 
 from sssom_rosetta import cli
@@ -592,3 +592,96 @@ def test_gephi_build_vocabulary_fails_when_input_missing(tmp_path: Path) -> None
     assert result.exit_code != 0
     assert "vocabulary merge" in result.output
     assert not output_path.exists()
+
+
+# --- vocabulary build-dhd-* / merge -------------------------------------------
+
+
+def test_vocabulary_build_dhd_fails_when_release_not_ingested(tmp_path: Path) -> None:
+    """No ``data/vocabularies/dhd-thesauri/<version>/`` directory at all: exit 1 with an 'ingest' hint."""
+    cache_dir = tmp_path / "cache"
+    output_dir = tmp_path / "build"
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "vocabulary",
+            "build-dhd-diagnosethesaurus",
+            "--output-dir",
+            str(output_dir),
+            "--cache-dir",
+            str(cache_dir),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "rosetta vocabulary ingest dhd-thesauri" in result.output
+    assert not (output_dir / "dhd-diagnosethesaurus.ttl").exists()
+
+
+def test_vocabulary_build_dhd_fails_on_format_version_mismatch(tmp_path: Path) -> None:
+    """Release directory exists but its subdirectory doesn't match FORMAT_VERSION: exit 1."""
+    from sssom_rosetta.vocabulary import dhd
+    from sssom_rosetta.vocabulary.sources import get_vocabulary_source
+
+    cache_dir = tmp_path / "cache"
+    output_dir = tmp_path / "build"
+    source = get_vocabulary_source("dhd-thesauri")
+    release_dir = cache_dir / source.name / source.version
+    (release_dir / "thesauri" / "DT" / "20250101_000000_wrong-format-version").mkdir(parents=True)
+    assert dhd.FORMAT_VERSION not in "wrong-format-version"
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "vocabulary",
+            "build-dhd-diagnosethesaurus",
+            "--output-dir",
+            str(output_dir),
+            "--cache-dir",
+            str(cache_dir),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "Error:" in result.output
+    assert not (output_dir / "dhd-diagnosethesaurus.ttl").exists()
+
+
+def test_vocabulary_merge_picks_up_present_build_outputs(tmp_path: Path) -> None:
+    """``merge`` unions whichever registered ``build-*`` outputs exist, ignoring absent ones."""
+    output_dir = tmp_path / "build"
+    output_dir.mkdir()
+    (output_dir / "omop.ttl").write_text(VOCABULARY_TTL)
+    (output_dir / "dhd-diagnosethesaurus.ttl").write_text(
+        """
+        @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+        @prefix dhddt: <https://w3id.org/dhd/dt/> .
+        @prefix sct: <http://snomed.info/id/> .
+
+        dhddt:0000000001 a skos:Concept ;
+            skos:exactMatch sct:73211009 .
+        """
+    )
+    # snomed-international.ttl / loinc-snomed.ttl / dhd-verrichtingenthesaurus.ttl absent on purpose.
+
+    result = runner.invoke(cli.app, ["vocabulary", "merge", "--output-dir", str(output_dir)])
+
+    assert result.exit_code == 0, result.output
+    merged_path = output_dir / "rosetta-vocabularies.ttl"
+    assert merged_path.exists()
+
+    merged = Graph()
+    merged.parse(str(merged_path), format="turtle")
+    dhd_concept = URIRef("https://w3id.org/dhd/dt/0000000001")
+    sct_concept = URIRef("http://snomed.info/id/73211009")
+    assert (dhd_concept, RDF.type, SKOS.Concept) in merged
+    assert (dhd_concept, SKOS.exactMatch, sct_concept) in merged
+
+
+def test_vocabulary_merge_fails_when_nothing_to_merge(tmp_path: Path) -> None:
+    output_dir = tmp_path / "build"
+
+    result = runner.invoke(cli.app, ["vocabulary", "merge", "--output-dir", str(output_dir)])
+
+    assert result.exit_code == 1
+    assert "build-omop" in result.output
+    assert not (output_dir / "rosetta-vocabularies.ttl").exists()

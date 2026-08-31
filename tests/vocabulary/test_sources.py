@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from sssom_rosetta.vocabulary.sources import (
     VOCABULARY_SOURCES,
@@ -51,5 +52,5 @@ def test_get_vocabulary_source_unknown_raises() -> None:
 
 def test_vocabulary_source_is_frozen() -> None:
     source = get_vocabulary_source("omop")
-    with pytest.raises(AttributeError):
+    with pytest.raises(ValidationError):
         source.version = "9.9.9"  # type: ignore[misc]
