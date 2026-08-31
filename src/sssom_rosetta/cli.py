@@ -666,12 +666,13 @@ def vocabulary_merge(
     """Merge the vocabulary graphs into ``rosetta-vocabularies.ttl``.
 
     Combines whichever of the registered ``build-*`` outputs (see
-    ``pipeline.BUILD_TARGETS``) are present under ``output_dir``. OMOP is the
-    base layer and is normally the only input; the native SNOMED/LOINC RF2
-    graphs and the DHD thesauri are optional additions. Because all mint
-    identical ``sct:`` IRIs, when the optional graphs are present the OMOP
-    concept_ids, any native concepts, and the DHD DT/VT concepts attach to
-    each other automatically once unioned.
+    ``pipeline.BUILD_TARGETS``) are present under ``output_dir``, using maplib
+    for a fast file-level union. OMOP is the base layer and is normally the
+    only required input; the native SNOMED/LOINC RF2 graphs and the DHD
+    thesauri are optional additions. Because all mint identical ``sct:``
+    IRIs, when the optional graphs are present the OMOP concept_ids, any
+    native concepts, and the DHD DT/VT concepts attach to each other
+    automatically once unioned.
     """
     inputs = merge_candidates(output_dir)
     if not inputs:

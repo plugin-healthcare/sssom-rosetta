@@ -1,16 +1,28 @@
-"""Merge the LOINC-SNOMED and OMOP graphs into one vocabulary Turtle file.
+"""Merge vocabulary Turtle files into one combined output.
 
-The two graphs share IRI schemes (``sct:``/``loinc:`` etc. from
-:mod:`~sssom_rosetta.vocabulary.namespaces`), so concepts referenced from both
-sides coincide automatically once their triples live in a single graph — that
-is how an OMOP ``concept_id`` node ends up connected to the LOINC-SNOMED
-ontology hierarchy.
+The graphs share IRI schemes (``sct:``/``loinc:``/``omop:``/``dhd-dt:`` etc.
+from :mod:`~sssom_rosetta.vocabulary.namespaces`), so concepts referenced from
+multiple sides coincide automatically once their triples live in a single
+graph — that is how an OMOP ``concept_id`` node ends up connected to the
+LOINC-SNOMED ontology hierarchy or a DHD thesaurus concept.
+
+:func:`merge_ttl_files` is the file-based merge path used by the ``rosetta
+vocabulary merge`` CLI command. It uses :mod:`maplib` (``Model.read`` /
+``Model.write``) rather than rdflib's ``Graph.parse``/``serialize``: on the
+production-scale OMOP export (944 MB / ~19.8M triples) maplib reads the file
+in roughly a minute, whereas rdflib's pure-Python parser is an order of
+magnitude slower and made ``just vocab-merge`` impractically slow. maplib
+reads triples straight from Turtle text, so it does not care which library
+wrote the file.
 
 ``omop.build_graph`` returns a ``maplib.Model`` while ``loinc_snomed`` and
 ``snomed_international`` still build ``rdflib.Graph`` (only OMOP's
 construction step moved to maplib; see :doc:`/vocabularies/index` for why).
-:func:`merge_graphs` accepts either kind of graph object and normalises both
-to rdflib triples before merging.
+:func:`merge_graphs` accepts either kind of graph object, normalises both to
+rdflib triples, and merges them in-memory; it remains available for callers
+that need an in-memory rdflib ``Graph`` (e.g. tests asserting cross-graph
+SPARQL-style triple lookups) but is no longer used by the CLI's file-merge
+path.
 """
 
 from __future__ import annotations
@@ -27,6 +39,11 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from rdflib.term import Node
+
+_PREFIXES = {prefix: str(namespace) for prefix, namespace in PREFIX_MAP.items()} | {
+    "skos": str(SKOS),
+    "owl": str(OWL),
+}
 
 
 class _MaplibModel(Protocol):
@@ -61,13 +78,18 @@ def merge_graphs(*graphs: Graph | _MaplibModel) -> Graph:
 
 
 def merge_ttl_files(inputs: list[Path], output_path: Path) -> Path:
-    """Parse each input Turtle file, merge, and serialize to ``output_path``."""
-    graphs = []
+    """Read each input Turtle file into one maplib ``Model`` and write ``output_path``.
+
+    ``Model.read`` accumulates triples across repeated calls on the same
+    instance, so reading every input into a single model has the same effect
+    as an rdflib union merge, without the slow rdflib parse/serialize
+    round-trip.
+    """
+    import maplib  # noqa: PLC0415 -- deferred so this module has no import-time maplib dependency
+
+    model = maplib.Model()
     for path in inputs:
-        graph = Graph()
-        graph.parse(str(path), format="turtle")
-        graphs.append(graph)
-    merged = merge_graphs(*graphs)
+        model.read(str(path), format="turtle", parallel=True)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    merged.serialize(destination=str(output_path), format="turtle")
+    model.write(str(output_path), format="turtle", prefixes=_PREFIXES)
     return output_path

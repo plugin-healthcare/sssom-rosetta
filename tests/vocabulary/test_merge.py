@@ -23,6 +23,8 @@ from sssom_rosetta.vocabulary.sources import VocabularySource
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from maplib import Model
+
 
 def _tiny_loinc_snomed_graph() -> Graph:
     concept = pl.DataFrame({"id": ["44054006"], "active": ["1"]})
@@ -56,7 +58,7 @@ def _tiny_loinc_snomed_graph() -> Graph:
     return loinc_snomed.build_graph(concept, description, language, relationship)
 
 
-def _tiny_omop_graph() -> Graph:
+def _tiny_omop_graph() -> Model:
     concepts = pl.DataFrame(
         {
             "concept_id": ["1002"],
@@ -73,7 +75,15 @@ def _tiny_omop_graph() -> Graph:
             "relationship_id": pl.Utf8,
         },
     )
-    return omop.build_graph(concepts, relationships)
+    relationship_types = pl.DataFrame(
+        {"relationship_id": [], "relationship_concept_id": [], "relationship_name": []},
+        schema={
+            "relationship_id": pl.Utf8,
+            "relationship_concept_id": pl.Utf8,
+            "relationship_name": pl.Utf8,
+        },
+    )
+    return omop.build_graph(concepts, relationships, relationship_types)
 
 
 def test_merge_connects_omop_to_snomed() -> None:
@@ -93,6 +103,24 @@ def test_merge_ttl_files_roundtrip(tmp_path: Path) -> None:
     omop.write_ttl(_tiny_omop_graph(), omop_path)
 
     out = merge.merge_ttl_files([ls_path, omop_path], tmp_path / "merged.ttl")
+    reloaded = Graph()
+    reloaded.parse(str(out), format="turtle")
+    assert (omop_iri("1002"), SKOS.exactMatch, sct_iri("44054006")) in reloaded
+
+
+def test_merge_ttl_files_uses_maplib(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The file-merge path should go through maplib, not rdflib parse/serialize."""
+    omop_path = tmp_path / "omop.ttl"
+    omop.write_ttl(_tiny_omop_graph(), omop_path)
+
+    def _fail_parse(*_args: object, **_kwargs: object) -> None:
+        msg = "rdflib.Graph.parse should not be used by merge_ttl_files"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(Graph, "parse", _fail_parse)
+    out = merge.merge_ttl_files([omop_path], tmp_path / "merged.ttl")
+    monkeypatch.undo()
+
     reloaded = Graph()
     reloaded.parse(str(out), format="turtle")
     assert (omop_iri("1002"), SKOS.exactMatch, sct_iri("44054006")) in reloaded

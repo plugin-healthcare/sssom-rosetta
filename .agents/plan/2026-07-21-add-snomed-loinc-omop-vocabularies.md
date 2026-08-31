@@ -1,12 +1,20 @@
 # Plan: Integrate LOINC-SNOMED Ontology + OHDSI/OMOP vocabularies into a single TTL
 
 **Date:** 2026-07-21
-**Status:** Draft
+**Status:** Implemented (superseded in part — see below)
 **Scope:** Add a reproducible pipeline that (a) parses the LOINC-SNOMED Ontology
 RF2 release into Turtle, and (b) integrates OHDSI/OMOP vocabularies so that OMOP
 `concept_id`s are woven together with SNOMED, LOINC, RxNorm and ICD10 concepts
 into a single `.ttl` graph — using **polars** for tabular parsing and **rdflib**
 for graph construction.
+
+**Superseded by:**
+- `.agents/plan/2026-07-30-implementation-maplib.md` (replaces the rdflib
+  graph-construction step in `omop.py::build_graph` with maplib/OTTR)
+- `.agents/plan/2026-07-31-omop-relationship-concept-predicates.md` (replaces
+  this plan's §2 fixed `Maps to`/`Is a`/`Subsumes` → SKOS predicate mapping
+  with a per-`relationship_concept_id` `omopconcept:` predicate scheme; no
+  legacy SKOS predicates are emitted for OMOP relationships anymore)
 
 ---
 
