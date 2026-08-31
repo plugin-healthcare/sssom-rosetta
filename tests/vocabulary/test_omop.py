@@ -85,7 +85,7 @@ def test_build_graph_concept_nodes_and_crosslinks() -> None:
 
     assert iris(model, loinc_node, rdf_type) == [skos_concept]
     assert objects(model, loinc_node, pref_label) == ['"Glucose [Mass/volume]"@en']
-    assert objects(model, loinc_node, notation) == ["2345-7"]
+    assert objects(model, loinc_node, notation) == ['"2345-7"']
     # LOINC concept cross-linked to its native source IRI.
     assert str(source_concept_iri("LOINC", "2345-7")) in iris(model, loinc_node, exact_match)
 
