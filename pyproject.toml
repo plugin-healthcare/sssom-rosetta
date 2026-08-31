@@ -40,6 +40,7 @@ dev = [
     "ruff>=0.15.21",
     "rust-just>=1.56,<2",
     "ty>=0.0.59",
+    "zensical>=0.0.50",
 ]
 docs = [
     "zensical>=0.0.50",
