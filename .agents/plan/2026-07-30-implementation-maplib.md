@@ -1,7 +1,7 @@
 # Plan: rebuild the OMOP graph construction step on maplib/OTTR
 
 **Date:** 2026-07-30 (revised after critical review, same day)
-**Status:** Draft
+**Status:** Implemented
 **Scope:** Replace the rdflib triple-add loop in
 `src/sssom_rosetta/vocabulary/omop.py::build_graph` with a **maplib** (OTTR
 template) mapping, keeping everything else about the pipeline unchanged: one

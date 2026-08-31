@@ -1,7 +1,7 @@
 # Plan: Integrate DHD Diagnose-/Verrichtingenthesaurus with OMOP vocabularies
 
 **Date:** 2026-07-28
-**Status:** Draft
+**Status:** Implemented
 **Scope:** Ingest the DHD Diagnosethesaurus (DT) and Verrichtingenthesaurus (VT)
 CSV releases in **uitleverformaat4.3** (the format both sample releases on
 disk actually use — see §1), build a SKOS Turtle graph per thesaurus, and
