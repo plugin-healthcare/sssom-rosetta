@@ -1,15 +1,34 @@
-# Vocabulary integration (LOINC-SNOMED + SNOMED International + OMOP + DHD)
+# Vocabularies
 
-This page documents the `rosetta vocabulary` pipeline, which integrates large terminology releases into a single RDF/Turtle graph — distinct from the curated SSSOM mapping sets under `mappings/`.
+A vocabulary is a large list of codes and terms. Think of SNOMED CT, LOINC,
+or the DHD Diagnosethesaurus. On their own, these lists don't talk to each
+other. sssom-rosetta combines them into one graph, so a code in one
+vocabulary can be linked to a matching code in another.
 
-## What it produces
+This is different from [ontology mappings](../mappings/omop-onz-g.md).
+Ontology mappings are hand-curated, one pair at a time. Vocabularies are
+combined automatically, at a much larger scale.
 
-`build/vocabularies/rosetta-vocabularies.ttl` — a merged SKOS/RDFS graph in which each OMOP `concept_id` node is cross-linked to SNOMED, LOINC, RxNorm and ICD10 / ICD10CM concepts, and to the LOINC-SNOMED Ontology hierarchy.
+## Why OMOP comes first
 
-Intermediate artifacts, each a **separate, independently versioned graph**: `build/vocabularies/loinc-snomed.ttl`, `build/vocabularies/snomed-international.ttl`, `build/vocabularies/omop.ttl`, `build/vocabularies/dhd-diagnosethesaurus.ttl` and `build/vocabularies/dhd-verrichtingenthesaurus.ttl`.
-All are gitignored, generated on demand.
+OMOP's Standardized Vocabularies already bring SNOMED CT, LOINC, RxNorm and
+ICD-10 together, with links between them. So OMOP is the base layer. We
+don't need to separately combine SNOMED or LOINC: OMOP already did that
+work.
 
-### Why SNOMED International is a separate graph
+## What's layered on top
+
+Dutch healthcare uses codes that OMOP doesn't cover. sssom-rosetta adds
+those on top of the OMOP base:
+
+- the **DHD Diagnosethesaurus** (diagnosis codes)
+- the **DHD Verrichtingenthesaurus** (procedure codes)
+
+Both are included by default whenever the vocabulary graph is built. See
+[Sources](sources.md) for details on each one, and the
+[roadmap](../roadmap.md) for what's planned next (such as Z-Index).
+
+### Optional: the LOINC-SNOMED extension
 
 The LOINC-SNOMED extension package contains **only** the LOINC Extension module (`11010000107`).
 Its `Is a` relationships point up to top-level SNOMED groupings (Body structure, Clinical finding, Observable entity, Substance, …) and the root `138875005`, but those parent concepts live in the **International core** module (`900000000000207008`) and are **not** in the extension package.
@@ -19,17 +38,18 @@ Ingesting the full SNOMED CT International Edition into its own `snomed-internat
 Because both graphs mint identical `sct:<id>` IRIs, the `merge` step reconnects the extension concepts to the International backbone automatically — the same mechanism that links OMOP `concept_id`s.
 Keeping the two graphs separate preserves per-release provenance and lets consumers who only need the extension skip the (large) International download.
 
-## Sources
+This pair is optional and opt-in (see [Workflow](#workflow) below), unlike OMOP and the DHD thesauri.
 
-| Source | Format | Version | Licence / access |
-|--------|--------|---------|------------------|
-| LOINC-SNOMED Ontology | SNOMED CT RF2 extension (module `11010000107`) | 2.82 | SNOMED International affiliate licence + LOINC licence; download from <https://loincsnomed.org/downloads> |
-| SNOMED CT International Edition | SNOMED CT RF2 (core module `900000000000207008`) | 20260101 | SNOMED International affiliate licence; download from <https://www.nlm.nih.gov/healthit/snomedct/international.html> (pin the release the LOINC extension's module-dependency refset targets) |
-| OMOP Standardized Vocabularies | Athena tab-delimited CSV bundle | pinned per download | OHDSI Athena account; select `SNOMED, LOINC, RxNorm, RxNorm Extension, ICD10, ICD10CM` |
-| DHD Diagnose-/Verrichtingenthesaurus | CSV bundle, **uitleverformaat4.3** (both DT and VT) | DT 3.44 / VT 2.43 (combined release `202508`) | Mijn DHD terms; download from <https://mijn.dhd.nl/> |
+## What you get
 
-Because both are licence-gated, there is **no open download URL**.
-The curator downloads the ZIP manually and ingests it; the loader verifies its SHA-256 checksum (when pinned in `vocabulary/sources.py`) and extracts it under `data/vocabularies/<name>/<version>/`.
+One combined graph, where every code becomes a node other mappings and
+tools can point at. See [How it's built](how-it-works.md) for the steps
+that produce it.
+
+`build/vocabularies/rosetta-vocabularies.ttl` — a merged SKOS/RDFS graph in which each OMOP `concept_id` node is cross-linked to SNOMED, LOINC, RxNorm and ICD10 / ICD10CM concepts, and to the LOINC-SNOMED Ontology hierarchy.
+
+Intermediate artifacts, each a **separate, independently versioned graph**: `build/vocabularies/loinc-snomed.ttl`, `build/vocabularies/snomed-international.ttl`, `build/vocabularies/omop.ttl`, `build/vocabularies/dhd-diagnosethesaurus.ttl` and `build/vocabularies/dhd-verrichtingenthesaurus.ttl`.
+All are gitignored, generated on demand.
 
 ## IRI schemes
 

@@ -1,6 +1,7 @@
 [project]
 site_name = "sssom-rosetta"
 site_description = "SSSOM mappings between RDF/OWL ontologies used in Dutch healthcare, starting with ONZ-G and OMOP CDM OWL."
+use_directory_urls = false
 
 nav = [
   {"Home" = "index.md"},
@@ -8,11 +9,14 @@ nav = [
      "ontologies/onz-g.md",
      "ontologies/omop-cdm.md"
   ]},
+  {"Vocabularies" = [
+     "vocabularies/index.md",
+     "vocabularies/sources.md",
+     "vocabularies/how-it-works.md"
+  ]},
   {"Mappings" = [
      "mappings/authoring.md",
      "mappings/omop-onz-g.md"
   ]},
-  {"Vocabularies" = [
-     "vocabularies/index.md"
-  ]}
+  {"Roadmap" = "roadmap.md"}
 ]

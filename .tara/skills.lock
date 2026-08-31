@@ -35,6 +35,12 @@
     "ref": "main",
     "repo": "https://github.com/duckdb/duckdb-skills"
   },
+  "gh-stack": {
+    "commit": "8c9c8331309529e2114d4c34e77f4edea543f9fa",
+    "path": "skills/gh-stack",
+    "ref": null,
+    "repo": "https://github.com/github/gh-stack"
+  },
   "install-duckdb": {
     "commit": "7feda8e01e22bc0886c86123f3884947e36d8c69",
     "path": "skills/install-duckdb",
