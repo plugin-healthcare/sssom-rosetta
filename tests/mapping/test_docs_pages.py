@@ -8,7 +8,7 @@ per AGENTS.md's testing conventions.
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from linkml_runtime.utils.metamodelcore import URI
 
@@ -18,6 +18,9 @@ from sssom_rosetta.mapping.docs_pages import (
 )
 from sssom_rosetta.mapping.io import write_sssom_tsv
 from sssom_rosetta.models.sssom import Mapping, MappingSet
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 MAPPING_SET_ID = URI("https://example.org/mappings/omop-onz-g")
 LICENSE = URI("https://creativecommons.org/publicdomain/zero/1.0/")
@@ -106,9 +109,7 @@ def test_generate_mapping_pages_overwrites_existing_placeholder(
     docs_dir.mkdir(parents=True)
 
     placeholder_path = docs_dir / "omop-onz-g.md"
-    placeholder_path.write_text(
-        "This page is a placeholder and should not be trusted.\n"
-    )
+    placeholder_path.write_text("This page is a placeholder and should not be trusted.\n")
 
     _write_tsv(build_dir, "omop-onz-g", _mapping_set(_mapping()))
 

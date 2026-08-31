@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import zipfile
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import polars as pl
 import pytest
@@ -19,6 +19,9 @@ from sssom_rosetta.vocabulary.fetch import (
 )
 from sssom_rosetta.vocabulary.namespaces import omop_iri, sct_iri
 from sssom_rosetta.vocabulary.sources import VocabularySource
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _tiny_loinc_snomed_graph() -> Graph:
@@ -96,8 +99,10 @@ def test_merge_ttl_files_roundtrip(tmp_path: Path) -> None:
 
 
 def _tiny_international_graph() -> Graph:
-    """A backbone where 73211009 (the extension parent) is typed and labelled,
-    and links up to root 138875005."""
+    """Backbone where 73211009 (the extension parent) is typed and labelled.
+
+    Links up to root 138875005.
+    """
     concept = pl.DataFrame({"id": ["73211009", "138875005"], "active": ["1", "1"]})
     description = pl.DataFrame(
         {
@@ -132,9 +137,7 @@ def _tiny_international_graph() -> Graph:
 def test_merge_connects_extension_to_international_backbone() -> None:
     from rdflib.namespace import RDF, RDFS
 
-    merged = merge.merge_graphs(
-        _tiny_loinc_snomed_graph(), _tiny_international_graph()
-    )
+    merged = merge.merge_graphs(_tiny_loinc_snomed_graph(), _tiny_international_graph())
 
     parent = sct_iri("73211009")
     root = sct_iri("138875005")

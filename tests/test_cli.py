@@ -9,14 +9,18 @@ fixtures are small inline CSV + CSVW metadata JSON pairs written to
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import networkx as nx
-import pytest
 from rdflib import Graph
 from typer.testing import CliRunner
 
 from sssom_rosetta import cli
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 runner = CliRunner()
 
@@ -96,7 +100,7 @@ def _patch_load_ontology(monkeypatch: pytest.MonkeyPatch) -> None:
 
     graphs_by_name = {"omop-cdm": omop_graph, "onz-g": onz_g_graph}
 
-    def _fake_load_ontology(source, cache_dir):  # noqa: ANN001, ARG001
+    def _fake_load_ontology(source, cache_dir):
         return graphs_by_name[source.name]
 
     monkeypatch.setattr(cli, "load_ontology", _fake_load_ontology)
@@ -111,55 +115,42 @@ def test_ontology_fetch_unknown_source_exits_nonzero() -> None:
     assert "Unknown ontology source" in result.output
 
 
-def test_ontology_fetch_known_source_prints_cached_path(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_ontology_fetch_known_source_prints_cached_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     expected_path = tmp_path / "onz-g" / "2.8.1" / "ontology.ttl"
 
-    def _fake_fetch_ontology(source, cache_dir, *, force=False):  # noqa: ANN001, ARG001
+    def _fake_fetch_ontology(source, cache_dir, *, force=False):
         return expected_path
 
     monkeypatch.setattr(cli, "fetch_ontology", _fake_fetch_ontology)
 
-    result = runner.invoke(
-        cli.app, ["ontology", "fetch", "onz-g", "--cache-dir", str(tmp_path)]
-    )
+    result = runner.invoke(cli.app, ["ontology", "fetch", "onz-g", "--cache-dir", str(tmp_path)])
     assert result.exit_code == 0
     assert str(expected_path) in result.output
 
 
-def test_ontology_fetch_omop_cdm_also_works(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_ontology_fetch_omop_cdm_also_works(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     expected_path = tmp_path / "omop-cdm" / "abc123" / "ontology.ttl"
 
-    def _fake_fetch_ontology(source, cache_dir, *, force=False):  # noqa: ANN001, ARG001
+    def _fake_fetch_ontology(source, cache_dir, *, force=False):
         return expected_path
 
     monkeypatch.setattr(cli, "fetch_ontology", _fake_fetch_ontology)
 
-    result = runner.invoke(
-        cli.app, ["ontology", "fetch", "omop-cdm", "--cache-dir", str(tmp_path)]
-    )
+    result = runner.invoke(cli.app, ["ontology", "fetch", "omop-cdm", "--cache-dir", str(tmp_path)])
     assert result.exit_code == 0
     assert str(expected_path) in result.output
 
 
-def test_ontology_fetch_error_exits_nonzero(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_ontology_fetch_error_exits_nonzero(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from sssom_rosetta.ontology.loader import OntologyFetchError
 
-    def _fake_fetch_ontology(source, cache_dir, *, force=False):  # noqa: ANN001, ARG001
-        raise OntologyFetchError(
-            "http://example.org/ontology.ttl", RuntimeError("boom")
-        )
+    def _fake_fetch_ontology(source, cache_dir, *, force=False):
+        msg = "http://example.org/ontology.ttl"
+        raise OntologyFetchError(msg, RuntimeError("boom"))
 
     monkeypatch.setattr(cli, "fetch_ontology", _fake_fetch_ontology)
 
-    result = runner.invoke(
-        cli.app, ["ontology", "fetch", "onz-g", "--cache-dir", str(tmp_path)]
-    )
+    result = runner.invoke(cli.app, ["ontology", "fetch", "onz-g", "--cache-dir", str(tmp_path)])
     assert result.exit_code != 0
     assert "Failed to fetch ontology" in result.output
 
@@ -167,9 +158,7 @@ def test_ontology_fetch_error_exits_nonzero(
 # --- mapping validate --------------------------------------------------------
 
 
-def test_mapping_validate_passes_for_valid_mapping_set(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_mapping_validate_passes_for_valid_mapping_set(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _patch_load_ontology(monkeypatch)
     csv_path, metadata_path = _write_csvw_pair(tmp_path, CSV_CONTENT)
 
@@ -193,9 +182,7 @@ def test_mapping_validate_passes_for_valid_mapping_set(
     assert "Validation passed." in result.output
 
 
-def test_mapping_validate_reports_referential_integrity_issues(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_mapping_validate_reports_referential_integrity_issues(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _patch_load_ontology(monkeypatch)
     csv_path, metadata_path = _write_csvw_pair(tmp_path, CSV_CONTENT_BAD)
 
@@ -219,9 +206,7 @@ def test_mapping_validate_reports_referential_integrity_issues(
     assert "subject_id" in result.output
 
 
-def test_mapping_validate_missing_curie_map_exits_nonzero(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_mapping_validate_missing_curie_map_exits_nonzero(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _patch_load_ontology(monkeypatch)
     csv_path, metadata_path = _write_csvw_pair(tmp_path, CSV_CONTENT)
 
@@ -244,9 +229,7 @@ def test_mapping_validate_missing_curie_map_exits_nonzero(
     assert "curie_map" in result.output
 
 
-def test_mapping_validate_invalid_curie_map_json_exits_nonzero(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_mapping_validate_invalid_curie_map_json_exits_nonzero(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _patch_load_ontology(monkeypatch)
     csv_path, metadata_path = _write_csvw_pair(tmp_path, CSV_CONTENT)
 
@@ -298,9 +281,7 @@ def test_mapping_validate_unknown_ontology_source_exits_nonzero(
 # --- mapping build --------------------------------------------------------
 
 
-def test_mapping_build_writes_tsv_and_ttl(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_mapping_build_writes_tsv_and_ttl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _patch_load_ontology(monkeypatch)
     csv_path, metadata_path = _write_csvw_pair(tmp_path, CSV_CONTENT)
     output_dir = tmp_path / "build" / "mappings"
@@ -332,9 +313,7 @@ def test_mapping_build_writes_tsv_and_ttl(
     assert str(expected_ttl) in result.output
 
 
-def test_mapping_build_fails_before_writing_when_invalid(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_mapping_build_fails_before_writing_when_invalid(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _patch_load_ontology(monkeypatch)
     csv_path, metadata_path = _write_csvw_pair(tmp_path, CSV_CONTENT_BAD)
     output_dir = tmp_path / "build" / "mappings"
@@ -363,9 +342,7 @@ def test_mapping_build_fails_before_writing_when_invalid(
 # --- mapping report --------------------------------------------------------
 
 
-def test_mapping_report_no_base_shows_everything_added(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_mapping_report_no_base_shows_everything_added(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _patch_load_ontology(monkeypatch)
     csv_path, metadata_path = _write_csvw_pair(tmp_path, CSV_CONTENT)
     output_dir = tmp_path / "build" / "mappings"
@@ -394,9 +371,7 @@ def test_mapping_report_no_base_shows_everything_added(
     assert "added" in result.output.lower()
 
 
-def test_mapping_report_writes_markdown_and_html_files(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_mapping_report_writes_markdown_and_html_files(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _patch_load_ontology(monkeypatch)
     csv_path, metadata_path = _write_csvw_pair(tmp_path, CSV_CONTENT)
     output_dir = tmp_path / "build" / "mappings"
@@ -444,9 +419,7 @@ def test_mapping_report_writes_markdown_and_html_files(
 # --- protege build ----------------------------------------------------------
 
 
-def test_protege_build_writes_combined_ttl(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_protege_build_writes_combined_ttl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _patch_load_ontology(monkeypatch)
     csv_path, metadata_path = _write_csvw_pair(tmp_path, CSV_CONTENT)
     output_path = tmp_path / "build" / "protege" / "omop-onz-g.combined.ttl"
@@ -477,9 +450,7 @@ def test_protege_build_writes_combined_ttl(
     assert len(combined) > 0
 
 
-def test_protege_build_fails_before_writing_when_invalid(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_protege_build_fails_before_writing_when_invalid(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _patch_load_ontology(monkeypatch)
     csv_path, metadata_path = _write_csvw_pair(tmp_path, CSV_CONTENT_BAD)
     output_path = tmp_path / "build" / "protege" / "omop-onz-g.combined.ttl"
@@ -521,9 +492,7 @@ omopconcept:201820 a skos:Concept ;
 """
 
 
-def test_gephi_build_ontology_writes_gexf(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_gephi_build_ontology_writes_gexf(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _patch_load_ontology(monkeypatch)
     csv_path, metadata_path = _write_csvw_pair(tmp_path, CSV_CONTENT)
     output_path = tmp_path / "build" / "gephi" / "omop-onz-g.gexf"

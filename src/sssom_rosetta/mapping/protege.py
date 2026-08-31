@@ -29,12 +29,16 @@ and OntoGraf only renders edges for typed object properties.
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rdflib import OWL, RDF, RDFS, BNode, Graph, URIRef
 
 from sssom_rosetta.mapping.author import expand_curie
-from sssom_rosetta.models.sssom import MappingSet
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from sssom_rosetta.models.sssom import MappingSet
 
 _EXACT_MATCH_SUFFIXES = ("skos/core#exactMatch",)
 
@@ -60,9 +64,8 @@ def _build_restriction_graph(mapping_set: MappingSet, *, prefix_map: dict[str, s
 
     for index, mapping in enumerate(mapping_set.mappings or []):
         if mapping.subject_id is None or mapping.object_id is None:
-            raise ValueError(
-                f"Mapping at index {index} is missing subject_id/object_id required to emit an axiom"
-            )
+            msg = f"Mapping at index {index} is missing subject_id/object_id required to emit an axiom"
+            raise ValueError(msg)
         subject_iri = expand_curie(mapping.subject_id, prefix_map)
         predicate_iri = expand_curie(mapping.predicate_id, prefix_map)
         object_iri = expand_curie(mapping.object_id, prefix_map)
@@ -87,9 +90,7 @@ def _build_restriction_graph(mapping_set: MappingSet, *, prefix_map: dict[str, s
     return graph
 
 
-def write_owl_restrictions(
-    mapping_set: MappingSet, output_path: Path, *, prefix_map: dict[str, str]
-) -> None:
+def write_owl_restrictions(mapping_set: MappingSet, output_path: Path, *, prefix_map: dict[str, str]) -> None:
     """Write an OWL graph of the mapping set using class-level axioms.
 
     Args:

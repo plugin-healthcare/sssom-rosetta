@@ -17,9 +17,7 @@ def test_registry_contains_onz_g() -> None:
     assert source.name == "onz-g"
     assert source.version == "2.8.1"
     assert source.iri == "http://purl.org/ozo/onz-g"
-    assert source.download_url.startswith(
-        "https://widoco.kik-v-credentialsplatform.nl/"
-    )
+    assert source.download_url.startswith("https://widoco.kik-v-credentialsplatform.nl/")
     assert source.download_url.endswith("ontology.ttl")
     assert source.checksum is None
 

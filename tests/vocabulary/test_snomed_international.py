@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rdflib import Literal
 from rdflib.namespace import RDF, RDFS, SKOS
 
 from sssom_rosetta.vocabulary import rf2, snomed_international
 from sssom_rosetta.vocabulary.namespaces import sct_iri
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Minimal International-style RF2: root 138875005 and Observable entity
 # 363787002 as its child, plus one leaf under Observable entity.
@@ -40,45 +43,108 @@ def _make_release(root: Path, *, subdir: str = "Snapshot") -> Path:
     _write_tsv(
         term / "sct2_Description_Snapshot-en_INT_20260101.txt",
         [
-            "id", "effectiveTime", "active", "moduleId", "conceptId",
-            "languageCode", "typeId", "term", "caseSignificanceId",
+            "id",
+            "effectiveTime",
+            "active",
+            "moduleId",
+            "conceptId",
+            "languageCode",
+            "typeId",
+            "term",
+            "caseSignificanceId",
         ],
         [
-            ["1", "20260101", "1", "900000000000207008", _ROOT, "en",
-             rf2.FSN_TYPE_ID, "SNOMED CT Concept (SNOMED RT+CTV3)", "900000000000448009"],
-            ["2", "20260101", "1", "900000000000207008", _OBSERVABLE, "en",
-             rf2.FSN_TYPE_ID, "Observable entity (observable entity)", "900000000000448009"],
-            ["3", "20260101", "1", "900000000000207008", _LEAF, "en",
-             rf2.FSN_TYPE_ID, "Finding of color (observable entity)", "900000000000448009"],
+            [
+                "1",
+                "20260101",
+                "1",
+                "900000000000207008",
+                _ROOT,
+                "en",
+                rf2.FSN_TYPE_ID,
+                "SNOMED CT Concept (SNOMED RT+CTV3)",
+                "900000000000448009",
+            ],
+            [
+                "2",
+                "20260101",
+                "1",
+                "900000000000207008",
+                _OBSERVABLE,
+                "en",
+                rf2.FSN_TYPE_ID,
+                "Observable entity (observable entity)",
+                "900000000000448009",
+            ],
+            [
+                "3",
+                "20260101",
+                "1",
+                "900000000000207008",
+                _LEAF,
+                "en",
+                rf2.FSN_TYPE_ID,
+                "Finding of color (observable entity)",
+                "900000000000448009",
+            ],
         ],
     )
     _write_tsv(
         lang_dir / "der2_cRefset_LanguageSnapshot-en_INT_20260101.txt",
         [
-            "id", "effectiveTime", "active", "moduleId", "refsetId",
-            "referencedComponentId", "acceptabilityId",
+            "id",
+            "effectiveTime",
+            "active",
+            "moduleId",
+            "refsetId",
+            "referencedComponentId",
+            "acceptabilityId",
         ],
         [
-            ["a", "20260101", "1", "900000000000207008", "900000000000509007",
-             "1", rf2.PREFERRED_ACCEPTABILITY_ID],
-            ["b", "20260101", "1", "900000000000207008", "900000000000509007",
-             "2", rf2.PREFERRED_ACCEPTABILITY_ID],
-            ["c", "20260101", "1", "900000000000207008", "900000000000509007",
-             "3", rf2.PREFERRED_ACCEPTABILITY_ID],
+            ["a", "20260101", "1", "900000000000207008", "900000000000509007", "1", rf2.PREFERRED_ACCEPTABILITY_ID],
+            ["b", "20260101", "1", "900000000000207008", "900000000000509007", "2", rf2.PREFERRED_ACCEPTABILITY_ID],
+            ["c", "20260101", "1", "900000000000207008", "900000000000509007", "3", rf2.PREFERRED_ACCEPTABILITY_ID],
         ],
     )
     _write_tsv(
         term / "sct2_Relationship_Snapshot_INT_20260101.txt",
         [
-            "id", "effectiveTime", "active", "moduleId", "sourceId",
-            "destinationId", "relationshipGroup", "typeId",
-            "characteristicTypeId", "modifierId",
+            "id",
+            "effectiveTime",
+            "active",
+            "moduleId",
+            "sourceId",
+            "destinationId",
+            "relationshipGroup",
+            "typeId",
+            "characteristicTypeId",
+            "modifierId",
         ],
         [
-            ["r1", "20260101", "1", "900000000000207008", _OBSERVABLE, _ROOT,
-             "0", rf2.IS_A_TYPE_ID, "900000000000011006", "900000000000451002"],
-            ["r2", "20260101", "1", "900000000000207008", _LEAF, _OBSERVABLE,
-             "0", rf2.IS_A_TYPE_ID, "900000000000011006", "900000000000451002"],
+            [
+                "r1",
+                "20260101",
+                "1",
+                "900000000000207008",
+                _OBSERVABLE,
+                _ROOT,
+                "0",
+                rf2.IS_A_TYPE_ID,
+                "900000000000011006",
+                "900000000000451002",
+            ],
+            [
+                "r2",
+                "20260101",
+                "1",
+                "900000000000207008",
+                _LEAF,
+                _OBSERVABLE,
+                "0",
+                rf2.IS_A_TYPE_ID,
+                "900000000000011006",
+                "900000000000451002",
+            ],
         ],
     )
     return root
@@ -116,9 +182,7 @@ def test_build_from_release_prefers_snapshot_over_full(tmp_path: Path) -> None:
 def test_write_ttl_round_trips(tmp_path: Path) -> None:
     release = _make_release(tmp_path / "release")
     graph = snomed_international.build_from_release(release)
-    out = snomed_international.write_ttl(
-        graph, tmp_path / "out" / "snomed-international.ttl"
-    )
+    out = snomed_international.write_ttl(graph, tmp_path / "out" / "snomed-international.ttl")
     assert out.exists()
     from rdflib import Graph
 

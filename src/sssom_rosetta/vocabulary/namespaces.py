@@ -48,9 +48,7 @@ _VOCABULARY_NAMESPACES: dict[str, Namespace] = {
 }
 
 #: The OMOP ``vocabulary_id`` values this pipeline integrates.
-TARGET_VOCABULARIES: frozenset[str] = frozenset(
-    {"SNOMED", "LOINC", "RxNorm", "RxNorm Extension", "ICD10", "ICD10CM"}
-)
+TARGET_VOCABULARIES: frozenset[str] = frozenset({"SNOMED", "LOINC", "RxNorm", "RxNorm Extension", "ICD10", "ICD10CM"})
 
 
 def sct_iri(sctid: str) -> URIRef:

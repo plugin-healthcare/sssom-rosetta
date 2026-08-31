@@ -28,15 +28,19 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, get_args, get_origin
+from typing import TYPE_CHECKING, Any, get_args, get_origin
 
 import markdown as markdown_lib
 from linkml_runtime.utils.metamodelcore import URI
 from sssom.parsers import parse_sssom_table
 
 from sssom_rosetta.mapping.validate import validate_schema_conformance
-from sssom_rosetta.models.sssom import Mapping, MappingSet
+from sssom_rosetta.models.sssom import Mapping
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from sssom_rosetta.models.sssom import MappingSet
 
 
 def _is_list_field(annotation: Any) -> bool:  # noqa: ANN401 - inspects a pydantic field annotation
@@ -51,11 +55,7 @@ def _is_list_field(annotation: Any) -> bool:  # noqa: ANN401 - inspects a pydant
 #: ``|``-separated string per SSSOM/TSV convention; we split that string
 #: back into an actual list before constructing ``Mapping``, since a raw
 #: string fails schema validation.
-_LIST_FIELDS = frozenset(
-    name
-    for name, info in Mapping.model_fields.items()
-    if _is_list_field(info.annotation)
-)
+_LIST_FIELDS = frozenset(name for name, info in Mapping.model_fields.items() if _is_list_field(info.annotation))
 
 #: Fields compared to decide whether a matched (subject_id, predicate_id,
 #: object_id) row pair counts as "changed" between base and head.
@@ -89,15 +89,10 @@ def load_mapping_set_tsv(path: Path) -> MappingSet:
         A validated ``MappingSet`` containing every TSV row as a ``Mapping``.
     """
     msdf = parse_sssom_table(str(path))
-    rows: list[dict[str, Any]] = []
-    for row in msdf.df.to_dict("records"):
-        rows.append(
-            {
-                key: _parse_list_cell(key, value)
-                for key, value in row.items()
-                if value is not None and not _is_nan(value)
-            }
-        )
+    rows: list[dict[str, Any]] = [
+        {key: _parse_list_cell(key, value) for key, value in row.items() if value is not None and not _is_nan(value)}
+        for row in msdf.df.to_dict("records")
+    ]
 
     metadata: dict[str, Any] = dict(msdf.metadata)
     metadata.setdefault("curie_map", dict(msdf.prefix_map))
@@ -171,9 +166,7 @@ def diff_mapping_sets(base: MappingSet | None, head: MappingSet) -> MappingDiff:
     head_by_key = {_mapping_key(mapping): mapping for mapping in head_mappings}
 
     added = [mapping for key, mapping in head_by_key.items() if key not in base_by_key]
-    removed = [
-        mapping for key, mapping in base_by_key.items() if key not in head_by_key
-    ]
+    removed = [mapping for key, mapping in base_by_key.items() if key not in head_by_key]
     changed: list[tuple[Mapping, Mapping]] = []
     unchanged_count = 0
     for key, head_mapping in head_by_key.items():
@@ -185,9 +178,7 @@ def diff_mapping_sets(base: MappingSet | None, head: MappingSet) -> MappingDiff:
         else:
             unchanged_count += 1
 
-    return MappingDiff(
-        added=added, removed=removed, changed=changed, unchanged_count=unchanged_count
-    )
+    return MappingDiff(added=added, removed=removed, changed=changed, unchanged_count=unchanged_count)
 
 
 def predicate_counts(mapping_set: MappingSet) -> dict[str, int]:
@@ -261,9 +252,7 @@ def _render_changed_table(changed: list[tuple[Mapping, Mapping]]) -> list[str]:
     return lines
 
 
-def render_markdown(
-    diff: MappingDiff, *, mapping_set: MappingSet, title: str = "Mapping report"
-) -> str:
+def render_markdown(diff: MappingDiff, *, mapping_set: MappingSet, title: str = "Mapping report") -> str:
     """Render a Markdown report: summary counts, per-predicate counts, diff tables.
 
     Args:
@@ -294,10 +283,7 @@ def render_markdown(
     if counts:
         lines.append("| Predicate | Count |")
         lines.append("| --- | --- |")
-        lines.extend(
-            f"| {_format_cell(predicate)} | {count} |"
-            for predicate, count in counts.items()
-        )
+        lines.extend(f"| {_format_cell(predicate)} | {count} |" for predicate, count in counts.items())
     else:
         lines.append("_None_")
     lines.append("")

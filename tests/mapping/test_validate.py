@@ -65,9 +65,7 @@ def valid_mapping_set(omop_graph: Graph, onz_g_graph: Graph) -> MappingSet:
         object_graph=onz_g_graph,
         mapping_justification="semapv:ManualMappingCuration",
     )
-    return MappingSet(
-        mapping_set_id=MAPPING_SET_ID, license=LICENSE, mappings=[mapping]
-    )
+    return MappingSet(mapping_set_id=MAPPING_SET_ID, license=LICENSE, mappings=[mapping])
 
 
 def test_validate_schema_conformance_accepts_valid_mapping_set(
@@ -112,18 +110,14 @@ def test_validate_referential_integrity_no_issues_for_valid_set(
     assert issues == []
 
 
-def test_validate_referential_integrity_flags_missing_subject(
-    omop_graph: Graph, onz_g_graph: Graph
-) -> None:
+def test_validate_referential_integrity_flags_missing_subject(omop_graph: Graph, onz_g_graph: Graph) -> None:
     bad_mapping = Mapping(
         subject_id="omop:NoSuchClass",
         predicate_id="skos:exactMatch",
         object_id="onz-g:Client",
         mapping_justification="semapv:ManualMappingCuration",
     )
-    mapping_set = MappingSet(
-        mapping_set_id=MAPPING_SET_ID, license=LICENSE, mappings=[bad_mapping]
-    )
+    mapping_set = MappingSet(mapping_set_id=MAPPING_SET_ID, license=LICENSE, mappings=[bad_mapping])
     issues = validate_referential_integrity(
         mapping_set,
         prefix_map=PREFIX_MAP,
@@ -135,18 +129,14 @@ def test_validate_referential_integrity_flags_missing_subject(
     assert issues[0].curie == "omop:NoSuchClass"
 
 
-def test_validate_referential_integrity_flags_unknown_prefix(
-    omop_graph: Graph, onz_g_graph: Graph
-) -> None:
+def test_validate_referential_integrity_flags_unknown_prefix(omop_graph: Graph, onz_g_graph: Graph) -> None:
     bad_mapping = Mapping(
         subject_id="nope:Thing",
         predicate_id="skos:exactMatch",
         object_id="onz-g:Client",
         mapping_justification="semapv:ManualMappingCuration",
     )
-    mapping_set = MappingSet(
-        mapping_set_id=MAPPING_SET_ID, license=LICENSE, mappings=[bad_mapping]
-    )
+    mapping_set = MappingSet(mapping_set_id=MAPPING_SET_ID, license=LICENSE, mappings=[bad_mapping])
     issues = validate_referential_integrity(
         mapping_set,
         prefix_map=PREFIX_MAP,
@@ -170,18 +160,14 @@ def test_validate_mapping_set_is_valid_for_good_data(
     assert result.issues == []
 
 
-def test_validate_mapping_set_reports_issues_for_bad_data(
-    omop_graph: Graph, onz_g_graph: Graph
-) -> None:
+def test_validate_mapping_set_reports_issues_for_bad_data(omop_graph: Graph, onz_g_graph: Graph) -> None:
     bad_mapping = Mapping(
         subject_id="omop:Person",
         predicate_id="skos:exactMatch",
         object_id="onz-g:NoSuchClass",
         mapping_justification="semapv:ManualMappingCuration",
     )
-    mapping_set = MappingSet(
-        mapping_set_id=MAPPING_SET_ID, license=LICENSE, mappings=[bad_mapping]
-    )
+    mapping_set = MappingSet(mapping_set_id=MAPPING_SET_ID, license=LICENSE, mappings=[bad_mapping])
     result = validate_mapping_set(
         mapping_set,
         prefix_map=PREFIX_MAP,

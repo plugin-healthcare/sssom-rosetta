@@ -9,7 +9,7 @@ the same filter/convert code but exercise different edges. See
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import networkx as nx
 import pytest
@@ -24,6 +24,9 @@ from sssom_rosetta.mapping.gephi import (
     to_networkx,
     write_gexf,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # A fixture graph shaped like the ontology export: two "ontologies", an
 # rdfs:subClassOf hierarchy edge, a skos:exactMatch mapping edge, several

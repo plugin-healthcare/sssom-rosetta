@@ -19,13 +19,16 @@ their `.sssom.tsv` is generated.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sssom_rosetta.mapping.report import (
     diff_mapping_sets,
     load_mapping_set_tsv,
     render_markdown,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -73,16 +76,12 @@ def generate_mapping_pages(build_dir: Path, docs_dir: Path) -> list[Path]:
         or contains no `.sssom.tsv` files.
     """
     if not build_dir.is_dir():
-        logger.warning(
-            "build directory %s does not exist; nothing to generate", build_dir
-        )
+        logger.warning("build directory %s does not exist; nothing to generate", build_dir)
         return []
 
     tsv_paths = sorted(build_dir.glob("*.sssom.tsv"))
     if not tsv_paths:
-        logger.warning(
-            "no .sssom.tsv files found under %s; nothing to generate", build_dir
-        )
+        logger.warning("no .sssom.tsv files found under %s; nothing to generate", build_dir)
         return []
 
     docs_dir.mkdir(parents=True, exist_ok=True)

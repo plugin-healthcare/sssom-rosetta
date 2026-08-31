@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 
@@ -39,7 +39,6 @@ from sssom_rosetta.mapping.report import (
     render_markdown,
 )
 from sssom_rosetta.mapping.validate import SchemaConformanceError, validate_mapping_set
-from sssom_rosetta.models.sssom import MappingSet
 from sssom_rosetta.ontology.loader import (
     DEFAULT_CACHE_DIR,
     ChecksumMismatchError,
@@ -67,24 +66,20 @@ from sssom_rosetta.vocabulary.sources import (
     get_vocabulary_source,
 )
 
+if TYPE_CHECKING:
+    from sssom_rosetta.models.sssom import MappingSet
+
 logger = logging.getLogger(__name__)
 
-app = typer.Typer(
-    help="Author, validate, and build SSSOM mappings between RDF ontologies."
-)
+app = typer.Typer(help="Author, validate, and build SSSOM mappings between RDF ontologies.")
 ontology_app = typer.Typer(help="Fetch and cache ontology sources.")
 mapping_app = typer.Typer(help="Author, validate, and build SSSOM mapping sets.")
 docs_app = typer.Typer(help="Generate the Zensical docs site's generated pages.")
-protege_app = typer.Typer(
-    help="Build a combined ontologies + mappings OWL file for exploring in Protege."
-)
+protege_app = typer.Typer(help="Build a combined ontologies + mappings OWL file for exploring in Protege.")
 vocabulary_app = typer.Typer(
-    help="Ingest large terminology releases (LOINC-SNOMED RF2, OMOP/Athena) and "
-    "build a merged vocabulary Turtle graph."
+    help="Ingest large terminology releases (LOINC-SNOMED RF2, OMOP/Athena) and build a merged vocabulary Turtle graph."
 )
-gephi_app = typer.Typer(
-    help="Export the combined ontology or vocabulary graph as GEXF for Gephi."
-)
+gephi_app = typer.Typer(help="Export the combined ontology or vocabulary graph as GEXF for Gephi.")
 app.add_typer(ontology_app, name="ontology")
 app.add_typer(mapping_app, name="mapping")
 app.add_typer(docs_app, name="docs")
@@ -103,9 +98,7 @@ _DEFAULT_OBJECT_SOURCE = "onz-g"
 
 @ontology_app.command("fetch")
 def ontology_fetch(
-    name: Annotated[
-        str, typer.Argument(help="Registry key, e.g. 'onz-g' or 'omop-cdm'.")
-    ],
+    name: Annotated[str, typer.Argument(help="Registry key, e.g. 'onz-g' or 'omop-cdm'.")],
     force: Annotated[
         bool,
         typer.Option("--force", help="Re-download even if a cached copy exists."),
@@ -173,9 +166,7 @@ def _read_and_validate_csvw(
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    curie_map_dict = {
-        prefix: str(iri) for prefix, iri in (mapping_set.curie_map or {}).items()
-    }
+    curie_map_dict = {prefix: str(iri) for prefix, iri in (mapping_set.curie_map or {}).items()}
     if not curie_map_dict:
         typer.echo(
             "Error: mapping set has no curie_map; cannot resolve CURIEs against "
@@ -210,9 +201,7 @@ def _read_and_validate_csvw(
     if not result.is_valid:
         typer.echo(f"Found {len(result.issues)} referential integrity issue(s):")
         for issue in result.issues:
-            typer.echo(
-                f"  [{issue.mapping_index}] {issue.field}={issue.curie!r}: {issue.reason}"
-            )
+            typer.echo(f"  [{issue.mapping_index}] {issue.field}={issue.curie!r}: {issue.reason}")
         raise typer.Exit(1)
 
     return result.mapping_set, curie_map_dict
@@ -222,9 +211,7 @@ def _read_and_validate_csvw(
 def mapping_validate(
     csv_path: Annotated[Path, typer.Argument(help="Authored mapping CSV.")],
     metadata_path: Annotated[Path, typer.Argument(help="Paired CSVW metadata JSON.")],
-    mapping_set_id: Annotated[
-        str, typer.Option(help="MappingSet.mapping_set_id (not row data).")
-    ],
+    mapping_set_id: Annotated[str, typer.Option(help="MappingSet.mapping_set_id (not row data).")],
     license: Annotated[  # noqa: A002 - matches the SSSOM field name
         str, typer.Option(help="MappingSet.license (not row data).")
     ],
@@ -279,9 +266,7 @@ def mapping_validate(
 def mapping_build(
     csv_path: Annotated[Path, typer.Argument(help="Authored mapping CSV.")],
     metadata_path: Annotated[Path, typer.Argument(help="Paired CSVW metadata JSON.")],
-    mapping_set_id: Annotated[
-        str, typer.Option(help="MappingSet.mapping_set_id (not row data).")
-    ],
+    mapping_set_id: Annotated[str, typer.Option(help="MappingSet.mapping_set_id (not row data).")],
     license: Annotated[  # noqa: A002 - matches the SSSOM field name
         str, typer.Option(help="MappingSet.license (not row data).")
     ],
@@ -289,15 +274,12 @@ def mapping_build(
         str,
         typer.Option(
             "--curie-map",
-            help=(
-                "MappingSet.curie_map as a JSON object string. See "
-                "'rosetta mapping validate --help' for details."
-            ),
+            help=("MappingSet.curie_map as a JSON object string. See 'rosetta mapping validate --help' for details."),
         ),
     ],
-    output_dir: Annotated[
-        Path, typer.Option(help="Directory derived TSV/TTL artifacts are written to.")
-    ] = Path("build/mappings"),
+    output_dir: Annotated[Path, typer.Option(help="Directory derived TSV/TTL artifacts are written to.")] = Path(
+        "build/mappings"
+    ),
     subject_source: Annotated[
         str,
         typer.Option(help="Ontology source name subject_id CURIEs resolve against."),
@@ -350,12 +332,8 @@ def mapping_report(
         ),
     ] = None,
     title: Annotated[str, typer.Option(help="Report title.")] = "Mapping report",
-    output_markdown: Annotated[
-        Path | None, typer.Option(help="Write the rendered Markdown here, if given.")
-    ] = None,
-    output_html: Annotated[
-        Path | None, typer.Option(help="Write the rendered HTML here, if given.")
-    ] = None,
+    output_markdown: Annotated[Path | None, typer.Option(help="Write the rendered Markdown here, if given.")] = None,
+    output_html: Annotated[Path | None, typer.Option(help="Write the rendered HTML here, if given.")] = None,
 ) -> None:
     """Render a Markdown (+ optional HTML) diff report from generated SSSOM/TSV file(s).
 
@@ -366,9 +344,7 @@ def mapping_report(
     printed to stdout.
     """
     head_mapping_set = load_mapping_set_tsv(head)
-    base_mapping_set = (
-        load_mapping_set_tsv(base) if base is not None and base.exists() else None
-    )
+    base_mapping_set = load_mapping_set_tsv(base) if base is not None and base.exists() else None
 
     diff = diff_mapping_sets(base_mapping_set, head_mapping_set)
     markdown_text = render_markdown(diff, mapping_set=head_mapping_set, title=title)
@@ -391,9 +367,7 @@ def docs_generate_mapping_pages(
     ] = Path("build/mappings"),
     docs_dir: Annotated[
         Path,
-        typer.Option(
-            help="Directory generated docs/mappings/<name>.md pages are written to."
-        ),
+        typer.Option(help="Directory generated docs/mappings/<name>.md pages are written to."),
     ] = Path("docs/mappings"),
 ) -> None:
     """Regenerate `docs/mappings/*.md` from `build/mappings/*.sssom.tsv`.
@@ -419,9 +393,7 @@ def docs_generate_mapping_pages(
 def protege_build(
     csv_path: Annotated[Path, typer.Argument(help="Authored mapping CSV.")],
     metadata_path: Annotated[Path, typer.Argument(help="Paired CSVW metadata JSON.")],
-    mapping_set_id: Annotated[
-        str, typer.Option(help="MappingSet.mapping_set_id (not row data).")
-    ],
+    mapping_set_id: Annotated[str, typer.Option(help="MappingSet.mapping_set_id (not row data).")],
     license: Annotated[  # noqa: A002 - matches the SSSOM field name
         str, typer.Option(help="MappingSet.license (not row data).")
     ],
@@ -429,10 +401,7 @@ def protege_build(
         str,
         typer.Option(
             "--curie-map",
-            help=(
-                "MappingSet.curie_map as a JSON object string. See "
-                "'rosetta mapping validate --help' for details."
-            ),
+            help=("MappingSet.curie_map as a JSON object string. See 'rosetta mapping validate --help' for details."),
         ),
     ],
     output_path: Annotated[
@@ -488,9 +457,7 @@ def protege_build(
 def gephi_build_ontology(
     csv_path: Annotated[Path, typer.Argument(help="Authored mapping CSV.")],
     metadata_path: Annotated[Path, typer.Argument(help="Paired CSVW metadata JSON.")],
-    mapping_set_id: Annotated[
-        str, typer.Option(help="MappingSet.mapping_set_id (not row data).")
-    ],
+    mapping_set_id: Annotated[str, typer.Option(help="MappingSet.mapping_set_id (not row data).")],
     license: Annotated[  # noqa: A002 - matches the SSSOM field name
         str, typer.Option(help="MappingSet.license (not row data).")
     ],
@@ -498,10 +465,7 @@ def gephi_build_ontology(
         str,
         typer.Option(
             "--curie-map",
-            help=(
-                "MappingSet.curie_map as a JSON object string. See "
-                "'rosetta mapping validate --help' for details."
-            ),
+            help=("MappingSet.curie_map as a JSON object string. See 'rosetta mapping validate --help' for details."),
         ),
     ],
     output_path: Annotated[
@@ -547,9 +511,7 @@ def gephi_build_ontology(
     subject_graph = load_ontology(subject_ontology, cache_dir)
     object_graph = load_ontology(object_ontology, cache_dir)
 
-    combined = build_combined_ontology_graph(
-        mapping_set, curie_map_dict, subject_graph, object_graph
-    )
+    combined = build_combined_ontology_graph(mapping_set, curie_map_dict, subject_graph, object_graph)
     build_ontology_graph(combined, output_path)
     typer.echo(str(output_path))
 
@@ -558,9 +520,7 @@ def gephi_build_ontology(
 def gephi_build_vocabulary(
     input_path: Annotated[
         Path,
-        typer.Option(
-            help="Merged vocabulary Turtle file (see 'rosetta vocabulary merge')."
-        ),
+        typer.Option(help="Merged vocabulary Turtle file (see 'rosetta vocabulary merge')."),
     ] = Path("build/vocabularies/rosetta-vocabularies.ttl"),
     output_path: Annotated[
         Path,
@@ -575,15 +535,13 @@ def gephi_build_vocabulary(
     """
     if not input_path.is_file():
         typer.echo(
-            f"Error: no merged vocabulary graph at {input_path}. Run "
-            "'rosetta vocabulary merge' first.",
+            f"Error: no merged vocabulary graph at {input_path}. Run 'rosetta vocabulary merge' first.",
             err=True,
         )
         raise typer.Exit(1)
 
     build_vocabulary_graph(input_path, output_path)
     typer.echo(str(output_path))
-
 
 
 DEFAULT_VOCAB_OUTPUT_DIR = Path("build/vocabularies")
@@ -593,15 +551,11 @@ DEFAULT_VOCAB_OUTPUT_DIR = Path("build/vocabularies")
 def vocabulary_ingest(
     name: Annotated[
         str,
-        typer.Argument(
-            help="Registry key: 'loinc-snomed', 'snomed-international' or 'omop'."
-        ),
+        typer.Argument(help="Registry key: 'loinc-snomed', 'snomed-international' or 'omop'."),
     ],
     zip_path: Annotated[
         Path,
-        typer.Argument(
-            help="Path to the locally-downloaded, licence-gated release ZIP."
-        ),
+        typer.Argument(help="Path to the locally-downloaded, licence-gated release ZIP."),
     ],
     force: Annotated[
         bool,
@@ -633,17 +587,14 @@ def vocabulary_build_loinc_snomed(
     output_dir: Annotated[
         Path, typer.Option(help="Directory the Turtle graph is written to.")
     ] = DEFAULT_VOCAB_OUTPUT_DIR,
-    cache_dir: Annotated[
-        Path, typer.Option(help="Base directory releases are extracted under.")
-    ] = VOCAB_CACHE_DIR,
+    cache_dir: Annotated[Path, typer.Option(help="Base directory releases are extracted under.")] = VOCAB_CACHE_DIR,
 ) -> None:
     """Build ``loinc-snomed.ttl`` from the ingested LOINC-SNOMED RF2 release."""
     source = get_vocabulary_source("loinc-snomed")
     release_dir = cache_dir_for(source, cache_dir)
     if not release_dir.is_dir():
         typer.echo(
-            f"Error: no ingested release at {release_dir}. Run "
-            "'rosetta vocabulary ingest loinc-snomed <zip>' first.",
+            f"Error: no ingested release at {release_dir}. Run 'rosetta vocabulary ingest loinc-snomed <zip>' first.",
             err=True,
         )
         raise typer.Exit(1)
@@ -658,9 +609,7 @@ def vocabulary_build_snomed_international(
     output_dir: Annotated[
         Path, typer.Option(help="Directory the Turtle graph is written to.")
     ] = DEFAULT_VOCAB_OUTPUT_DIR,
-    cache_dir: Annotated[
-        Path, typer.Option(help="Base directory releases are extracted under.")
-    ] = VOCAB_CACHE_DIR,
+    cache_dir: Annotated[Path, typer.Option(help="Base directory releases are extracted under.")] = VOCAB_CACHE_DIR,
 ) -> None:
     """Build ``snomed-international.ttl`` from the ingested International release."""
     source = get_vocabulary_source("snomed-international")
@@ -674,9 +623,7 @@ def vocabulary_build_snomed_international(
         raise typer.Exit(1)
 
     graph = snomed_international.build_from_release(release_dir)
-    output_path = snomed_international.write_ttl(
-        graph, output_dir / "snomed-international.ttl"
-    )
+    output_path = snomed_international.write_ttl(graph, output_dir / "snomed-international.ttl")
     typer.echo(str(output_path))
 
 
@@ -685,17 +632,14 @@ def vocabulary_build_omop(
     output_dir: Annotated[
         Path, typer.Option(help="Directory the Turtle graph is written to.")
     ] = DEFAULT_VOCAB_OUTPUT_DIR,
-    cache_dir: Annotated[
-        Path, typer.Option(help="Base directory releases are extracted under.")
-    ] = VOCAB_CACHE_DIR,
+    cache_dir: Annotated[Path, typer.Option(help="Base directory releases are extracted under.")] = VOCAB_CACHE_DIR,
 ) -> None:
     """Build ``omop.ttl`` from the ingested OMOP/Athena vocabulary bundle."""
     source = get_vocabulary_source("omop")
     release_dir = cache_dir_for(source, cache_dir)
     if not release_dir.is_dir():
         typer.echo(
-            f"Error: no ingested release at {release_dir}. Run "
-            "'rosetta vocabulary ingest omop <zip>' first.",
+            f"Error: no ingested release at {release_dir}. Run 'rosetta vocabulary ingest omop <zip>' first.",
             err=True,
         )
         raise typer.Exit(1)
