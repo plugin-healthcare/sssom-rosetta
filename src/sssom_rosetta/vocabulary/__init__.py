@@ -12,9 +12,9 @@ releases rather than pre-built OWL ontologies. The workflow is:
    with OMOP ``concept_id`` nodes cross-linked to source-vocabulary concepts.
 6. ``merge`` — combine the graphs into ``rosetta-vocabularies.ttl``.
 
-Everything here produces a lightweight SKOS/RDFS graph (see
-``.agents/plan/2026-07-21-owl-dl-classification-deferral-note.md`` for why full
-OWL-DL axiom classification is deferred).
+Everything here produces a lightweight SKOS/RDFS graph; see
+:doc:`/vocabularies/index` for why full OWL-DL axiom classification is
+deferred.
 """
 
 from __future__ import annotations

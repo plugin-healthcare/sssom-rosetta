@@ -10,10 +10,12 @@ recording its checksum for reproducibility.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from pydantic import BaseModel, ConfigDict
+
+from sssom_rosetta.vocabulary.errors import VocabularyError
 
 
-class UnknownVocabularySourceError(KeyError):
+class UnknownVocabularySourceError(VocabularyError, KeyError):
     """Raised when a requested vocabulary source is not in the registry."""
 
     def __init__(self, name: str) -> None:
@@ -22,20 +24,31 @@ class UnknownVocabularySourceError(KeyError):
         super().__init__(f"Unknown vocabulary source {name!r}. Known sources: {known}")
 
 
-@dataclass(frozen=True)
-class VocabularySource:
+class VocabularySource(BaseModel):
     """A pinned, licence-gated vocabulary release ingested from a local ZIP.
+
+    A frozen (immutable) pydantic model rather than a plain dataclass, so the
+    registry below gets field-level validation for free (e.g. a future YAML
+    loader for this registry can call ``VocabularySource.model_validate`` on
+    parsed YAML directly, instead of hand-rolling a validator).
 
     Attributes:
         name: Short registry key, e.g. ``"loinc-snomed"`` or ``"omop"``.
         version: Pinned release version string.
-        kind: ``"rf2"`` (SNOMED CT RF2 package) or ``"athena"`` (OMOP bundle).
+        kind: ``"rf2"`` (SNOMED CT RF2 package), ``"athena"`` (OMOP bundle),
+            or ``"dhd-csv"`` (DHD thesaurus CSV release).
         description: Human-readable provenance note.
         download_page: The (licence-gated) page the ZIP is obtained from;
             informational only — the loader never scrapes it.
         checksum: SHA-256 of the curator-provided ZIP, verified on ingest.
             ``None`` until a specific release is pinned by a curator.
+        format_version: The source's own file/column-layout format version
+            (e.g. DHD's ``"uitleverformaat4.3"``), when the source publishes
+            one and it's distinct from ``version`` (the pinned release/content
+            version). ``None`` for sources without a separate format version.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     name: str
     version: str
@@ -43,6 +56,7 @@ class VocabularySource:
     description: str
     download_page: str
     checksum: str | None = None
+    format_version: str | None = None
 
 
 VOCABULARY_SOURCES: dict[str, VocabularySource] = {
@@ -80,6 +94,21 @@ VOCABULARY_SOURCES: dict[str, VocabularySource] = {
             "LOINC-SNOMED extension's module-dependency refset."
         ),
         download_page="https://www.nlm.nih.gov/healthit/snomedct/international.html",
+    ),
+    "dhd-thesauri": VocabularySource(
+        name="dhd-thesauri",
+        version="202508",
+        kind="dhd-csv",
+        format_version="uitleverformaat4.3",
+        description=(
+            "DHD Diagnosethesaurus (DT, release 3.44) and Verrichtingenthesaurus "
+            "(VT, release 2.43) CSV bundles, both in uitleverformaat4.3, "
+            "distributed together as one ZIP under `thesauri/DT/` and "
+            "`thesauri/VT/`. `dhd.build_from_release` locates the DT or VT "
+            "subtree within the ingested release directory and asserts its "
+            "`FORMAT_VERSION` marker (see `dhd.py`)."
+        ),
+        download_page="https://mijn.dhd.nl/",
     ),
 }
 

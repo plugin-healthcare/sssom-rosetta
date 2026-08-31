@@ -9,8 +9,7 @@ concept:
 * ``Is a`` → ``rdfs:subClassOf`` **and** ``skos:broadMatch`` (child → parent).
 
 Full OWL-DL logical definitions from the OWL Expression refset are intentionally
-not materialised here — see
-``.agents/plan/2026-07-21-owl-dl-classification-deferral-note.md``.
+not materialised here; see :doc:`/vocabularies/index` for the rationale.
 """
 
 from __future__ import annotations

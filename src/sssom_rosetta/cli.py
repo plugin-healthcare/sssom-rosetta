@@ -51,17 +51,19 @@ from sssom_rosetta.ontology.sources import (
     UnknownOntologySourceError,
     get_source,
 )
-from sssom_rosetta.vocabulary import loinc_snomed, merge, omop, snomed_international
+from sssom_rosetta.vocabulary import merge
+from sssom_rosetta.vocabulary.errors import VocabularyError
 from sssom_rosetta.vocabulary.fetch import (
     DEFAULT_CACHE_DIR as VOCAB_CACHE_DIR,
 )
 from sssom_rosetta.vocabulary.fetch import (
     VocabularyChecksumMismatchError,
     VocabularyIngestError,
-    cache_dir_for,
     ingest_zip,
 )
+from sssom_rosetta.vocabulary.pipeline import BUILD_TARGETS, build_target, get_build_target, merge_candidates
 from sssom_rosetta.vocabulary.sources import (
+    VOCABULARY_SOURCES,
     UnknownVocabularySourceError,
     get_vocabulary_source,
 )
@@ -77,7 +79,10 @@ mapping_app = typer.Typer(help="Author, validate, and build SSSOM mapping sets."
 docs_app = typer.Typer(help="Generate the Zensical docs site's generated pages.")
 protege_app = typer.Typer(help="Build a combined ontologies + mappings OWL file for exploring in Protege.")
 vocabulary_app = typer.Typer(
-    help="Ingest large terminology releases (LOINC-SNOMED RF2, OMOP/Athena) and build a merged vocabulary Turtle graph."
+    help=(
+        "Ingest large terminology releases (LOINC-SNOMED RF2, OMOP/Athena, DHD thesauri) "
+        "and build a merged vocabulary Turtle graph."
+    )
 )
 gephi_app = typer.Typer(help="Export the combined ontology or vocabulary graph as GEXF for Gephi.")
 app.add_typer(ontology_app, name="ontology")
@@ -546,12 +551,16 @@ def gephi_build_vocabulary(
 
 DEFAULT_VOCAB_OUTPUT_DIR = Path("build/vocabularies")
 
+#: Registry-key help text shared by ``ingest``'s ``name`` argument, derived
+#: from ``VOCABULARY_SOURCES`` so it can't drift from the actual registry.
+_VOCABULARY_SOURCE_NAMES = ", ".join(f"'{name}'" for name in VOCABULARY_SOURCES)
+
 
 @vocabulary_app.command("ingest")
 def vocabulary_ingest(
     name: Annotated[
         str,
-        typer.Argument(help="Registry key: 'loinc-snomed', 'snomed-international' or 'omop'."),
+        typer.Argument(help=f"Registry key: {_VOCABULARY_SOURCE_NAMES}."),
     ],
     zip_path: Annotated[
         Path,
@@ -582,6 +591,17 @@ def vocabulary_ingest(
     typer.echo(str(target_dir))
 
 
+def _run_build_target(command_name: str, output_dir: Path, cache_dir: Path) -> None:
+    """Shared body for every ``vocabulary build-*`` command: run its :class:`~pipeline.BuildTarget`."""
+    target = get_build_target(command_name)
+    try:
+        output_path = build_target(target, output_dir, cache_dir)
+    except VocabularyError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(str(output_path))
+
+
 @vocabulary_app.command("build-loinc-snomed")
 def vocabulary_build_loinc_snomed(
     output_dir: Annotated[
@@ -590,18 +610,7 @@ def vocabulary_build_loinc_snomed(
     cache_dir: Annotated[Path, typer.Option(help="Base directory releases are extracted under.")] = VOCAB_CACHE_DIR,
 ) -> None:
     """Build ``loinc-snomed.ttl`` from the ingested LOINC-SNOMED RF2 release."""
-    source = get_vocabulary_source("loinc-snomed")
-    release_dir = cache_dir_for(source, cache_dir)
-    if not release_dir.is_dir():
-        typer.echo(
-            f"Error: no ingested release at {release_dir}. Run 'rosetta vocabulary ingest loinc-snomed <zip>' first.",
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    graph = loinc_snomed.build_from_release(release_dir)
-    output_path = loinc_snomed.write_ttl(graph, output_dir / "loinc-snomed.ttl")
-    typer.echo(str(output_path))
+    _run_build_target("build-loinc-snomed", output_dir, cache_dir)
 
 
 @vocabulary_app.command("build-snomed-international")
@@ -612,19 +621,7 @@ def vocabulary_build_snomed_international(
     cache_dir: Annotated[Path, typer.Option(help="Base directory releases are extracted under.")] = VOCAB_CACHE_DIR,
 ) -> None:
     """Build ``snomed-international.ttl`` from the ingested International release."""
-    source = get_vocabulary_source("snomed-international")
-    release_dir = cache_dir_for(source, cache_dir)
-    if not release_dir.is_dir():
-        typer.echo(
-            f"Error: no ingested release at {release_dir}. Run "
-            "'rosetta vocabulary ingest snomed-international <zip>' first.",
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    graph = snomed_international.build_from_release(release_dir)
-    output_path = snomed_international.write_ttl(graph, output_dir / "snomed-international.ttl")
-    typer.echo(str(output_path))
+    _run_build_target("build-snomed-international", output_dir, cache_dir)
 
 
 @vocabulary_app.command("build-omop")
@@ -635,18 +632,29 @@ def vocabulary_build_omop(
     cache_dir: Annotated[Path, typer.Option(help="Base directory releases are extracted under.")] = VOCAB_CACHE_DIR,
 ) -> None:
     """Build ``omop.ttl`` from the ingested OMOP/Athena vocabulary bundle."""
-    source = get_vocabulary_source("omop")
-    release_dir = cache_dir_for(source, cache_dir)
-    if not release_dir.is_dir():
-        typer.echo(
-            f"Error: no ingested release at {release_dir}. Run 'rosetta vocabulary ingest omop <zip>' first.",
-            err=True,
-        )
-        raise typer.Exit(1)
+    _run_build_target("build-omop", output_dir, cache_dir)
 
-    graph = omop.build_from_release(release_dir)
-    output_path = omop.write_ttl(graph, output_dir / "omop.ttl")
-    typer.echo(str(output_path))
+
+@vocabulary_app.command("build-dhd-diagnosethesaurus")
+def vocabulary_build_dhd_diagnosethesaurus(
+    output_dir: Annotated[
+        Path, typer.Option(help="Directory the Turtle graph is written to.")
+    ] = DEFAULT_VOCAB_OUTPUT_DIR,
+    cache_dir: Annotated[Path, typer.Option(help="Base directory releases are extracted under.")] = VOCAB_CACHE_DIR,
+) -> None:
+    """Build ``dhd-diagnosethesaurus.ttl`` from the ingested DHD thesauri release (DT, uitleverformaat4.3)."""
+    _run_build_target("build-dhd-diagnosethesaurus", output_dir, cache_dir)
+
+
+@vocabulary_app.command("build-dhd-verrichtingenthesaurus")
+def vocabulary_build_dhd_verrichtingenthesaurus(
+    output_dir: Annotated[
+        Path, typer.Option(help="Directory the Turtle graph is written to.")
+    ] = DEFAULT_VOCAB_OUTPUT_DIR,
+    cache_dir: Annotated[Path, typer.Option(help="Base directory releases are extracted under.")] = VOCAB_CACHE_DIR,
+) -> None:
+    """Build ``dhd-verrichtingenthesaurus.ttl`` from the ingested DHD thesauri release (VT, uitleverformaat4.3)."""
+    _run_build_target("build-dhd-verrichtingenthesaurus", output_dir, cache_dir)
 
 
 @vocabulary_app.command("merge")
@@ -657,24 +665,19 @@ def vocabulary_merge(
 ) -> None:
     """Merge the vocabulary graphs into ``rosetta-vocabularies.ttl``.
 
-    Combines whichever of ``omop.ttl``, ``snomed-international.ttl`` and
-    ``loinc-snomed.ttl`` are present. OMOP is the base layer and is normally the
-    only input; the native SNOMED/LOINC RF2 graphs are optional (deferred
-    OWL-DL follow-up). Because all mint identical ``sct:`` IRIs, when the
-    optional graphs are present the OMOP concept_ids and any native concepts
-    attach to each other automatically once unioned.
+    Combines whichever of the registered ``build-*`` outputs (see
+    ``pipeline.BUILD_TARGETS``) are present under ``output_dir``. OMOP is the
+    base layer and is normally the only input; the native SNOMED/LOINC RF2
+    graphs and the DHD thesauri are optional additions. Because all mint
+    identical ``sct:`` IRIs, when the optional graphs are present the OMOP
+    concept_ids, any native concepts, and the DHD DT/VT concepts attach to
+    each other automatically once unioned.
     """
-    candidates = [
-        output_dir / "omop.ttl",
-        output_dir / "snomed-international.ttl",
-        output_dir / "loinc-snomed.ttl",
-    ]
-    inputs = [path for path in candidates if path.exists()]
+    inputs = merge_candidates(output_dir)
     if not inputs:
+        command_names = ", ".join(f"'{target.command_name}'" for target in BUILD_TARGETS)
         typer.echo(
-            "Error: no input graphs found to merge. Run 'build-omop' "
-            "(and optionally 'build-snomed-international' / "
-            "'build-loinc-snomed') first.",
+            f"Error: no input graphs found to merge. Run {command_names} first (build-omop at least).",
             err=True,
         )
         raise typer.Exit(1)

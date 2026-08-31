@@ -6,20 +6,8 @@
 
 ## Authoring of SSSOM mappings
 
-- To assert that one concept is broader in meaning (i.e. more general) than another, the `skos:broadMatch` property is used. The `skos:narrower` property is used to assert the inverse, namely when one concept is narrower in meaning (i.e. more specific) than another. For example:
-
-```
-ex:animals rdf:type skos:Concept;
-  skos:prefLabel "animals"@en;
-  skos:narrowMatch ex:mammals.
-ex:mammals rdf:type skos:Concept;
-  skos:prefLabel "mammals"@en;
-  skos:broadMatch ex:animals.
-```
-
-- Note on `skos:broadMatch` direction: for historic reasons, the name of the `skos:broadMatch` property does not provide an explicit indication of its direction. The word "broadMatch" should read here as "has broader concept"; the subject of a `skos:broadMatch` statement is the more specific concept involved in the assertion and its object is the more generic one.
-- As is often the case in KOS, a SKOS concept can be attached to several broader concepts at the same time. For example, a concept ex:dog could have both ex:mammals and ex:domesticatedAnimals as broader concepts.
-- Prefer use of `broadMatch`, `narrowMatch` and `exactMatch` over `relatedMatch`
+- Follow the `skos:broadMatch`/`skos:narrowMatch`/`skos:exactMatch` conventions documented in
+  [docs/mappings/authoring.md](docs/mappings/authoring.md); do not duplicate that content here.
 
 ## Architectural decisions log
 

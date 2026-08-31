@@ -73,17 +73,20 @@ report:
 docs-pages:
     uv run rosetta docs generate-mapping-pages
 
-# --- Vocabulary integration (OMOP/Athena base; optional native SNOMED/LOINC RF2) ---
+# --- Vocabulary integration (OMOP/Athena + DHD thesauri base; optional native SNOMED/LOINC RF2) ---
 # These releases are licence-gated, so the curator downloads the ZIPs manually
 # and ingests them; there is no open download URL to fetch from. For that
 # reason the vocab-* recipes are intentionally NOT part of `build-all`.
 #
 # Scope: OMOP is the base layer — it already includes SNOMED CT International and
-# LOINC, harmonised with a pre-computed hierarchy. The default `vocab-build`
-# therefore builds and merges OMOP only. The native LOINC-SNOMED and SNOMED CT
-# International RF2 builders are retained as opt-in recipes for the deferred
-# OWL-DL / native-SNOMED follow-up (relationship groups, post-coordination,
-# refsets); they are NOT part of the default merged graph. See README.md and
+# LOINC, harmonised with a pre-computed hierarchy. The DHD Diagnosethesaurus (DT)
+# and Verrichtingenthesaurus (VT), uitleverformaat4.3, are also standard (not
+# optional) — they cross-link to OMOP via shared sct:/icd10: IRIs once merged.
+# The default `vocab-build` therefore builds and merges OMOP + DHD DT + DHD VT.
+# The native LOINC-SNOMED and SNOMED CT International RF2 builders are retained
+# as opt-in recipes for the deferred OWL-DL / native-SNOMED follow-up
+# (relationship groups, post-coordination, refsets); they are NOT part of the
+# default merged graph. See README.md and
 # .agents/plan/2026-07-21-owl-dl-classification-deferral-note.md.
 
 # Ingest a locally-downloaded release ZIP (e.g. `just vocab-ingest omop path/to.zip`).
@@ -94,12 +97,20 @@ vocab-ingest name zip:
 vocab-build-omop:
     uv run rosetta vocabulary build-omop
 
+# Build dhd-diagnosethesaurus.ttl from the ingested DHD thesauri release (DT).
+vocab-build-dhd-dt:
+    uv run rosetta vocabulary build-dhd-diagnosethesaurus
+
+# Build dhd-verrichtingenthesaurus.ttl from the ingested DHD thesauri release (VT).
+vocab-build-dhd-vt:
+    uv run rosetta vocabulary build-dhd-verrichtingenthesaurus
+
 # Merge the vocabulary graphs into build/vocabularies/rosetta-vocabularies.ttl.
 vocab-merge:
     uv run rosetta vocabulary merge
 
-# Build the default vocabulary graph (OMOP base) and the merged output.
-vocab-build: vocab-build-omop vocab-merge
+# Build the default vocabulary graph (OMOP + DHD DT + DHD VT) and the merged output.
+vocab-build: vocab-build-omop vocab-build-dhd-dt vocab-build-dhd-vt vocab-merge
 
 # --- Optional: native SNOMED/LOINC RF2 (deferred OWL-DL follow-up, not in vocab-build) ---
 
